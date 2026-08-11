@@ -244,7 +244,7 @@ In BlueBall neon would have been a skin. In Gravi **light is the ruleset**, beca
 - **Brightness is remaining life.** A depleting node dims; when the rival burns an anchor three chambers ahead, the player watches it go dark.
 - **The beam is the force.** Thickness and intensity scale with magnitude, so a far grab visibly strains and a near one barely glows.
 
-**Technical payoff:** §8.4 flags that rotating a nearest-neighbour-upscaled pixel surface during a gravity flip will shimmer and crawl. Neon rendered at native resolution with additive glow on a near-black field rotates cleanly. Choosing neon **deletes** that problem rather than solving it. Gravi therefore drops BlueBall's `PIXEL_SCALE` virtual-surface pipeline entirely.
+**Technical payoff:** rotating a nearest-neighbour-upscaled pixel surface during a gravity flip (§3.3) shimmers and crawls badly — BlueBall's renderer draws to a virtual surface at `PIXEL_SCALE` and upscales, so it would have hit this. Neon rendered at native resolution with additive glow on a near-black field rotates cleanly. Choosing neon **deletes** that problem rather than solving it. Gravi therefore drops BlueBall's `PIXEL_SCALE` virtual-surface pipeline entirely.
 
 ---
 
