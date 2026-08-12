@@ -16,6 +16,18 @@ Verified working with pygbag 0.9.3 on 2026-08-11.
   locks up.
 - Runtime dependencies must be pure Python or shipped by the pygbag runtime.
   This is why Gravi has no pymunk and no physics engine (see the slice 1 plan).
+- `main.py` must put `src/` on `sys.path` itself. Natively `pip install -e .`
+  makes `import gravi` work; the browser has no install step and runs `main.py`
+  straight out of the packaged directory, so the src layout is invisible there.
+  Without the shim, `import gravi` fails, pygbag falls back to hunting for a
+  PyPI package named `gravi`, and gets a 404 from `pypi.org/simple/gravi/`. Do
+  not remove the `sys.path.insert` at the top of `main.py`.
+
+  The symptom is a **grey** screen that never changes after click-to-start.
+  Grey is pygbag's own "Loading, please wait ..." page, so a grey screen always
+  means boot never handed control to `main.py` — the app is not merely drawing
+  the wrong colour. Once `main.py` runs, the page turns near-black (COLOR_BG).
+  Grey vs black is the fastest way to tell a boot failure from a game bug.
 - Writing to disk (tuning presets, edited rooms) works natively but not in the
   browser build; save paths must fail soft rather than raise.
 
@@ -56,6 +68,19 @@ Verified working with pygbag 0.9.3 on 2026-08-11.
   `http://localhost:8000/` with no traceback in the server log.
 - Build output: `build/web/index.html`, `build/web/gravi.apk`,
   `build/web/gravi.tar.gz`, `build/web/favicon.png`.
-- Not verified here (no browser/display available in this environment): that
-  the canvas actually renders or that the browser devtools console is clean.
-  A human needs to open `http://localhost:8000` and check both.
+- Verified in Chrome on 2026-08-12: after click-to-start the canvas renders
+  near-black at 1280x720. The build machine has no browser, so this half of
+  the check is a human step — the agent-side build check cannot catch a
+  browser-only import failure, which is precisely how the src-layout bug above
+  survived the first pass.
+- Benign console noise, expected on every run, not worth chasing:
+  - `** MEDIA USER ACTION REQUIRED **` — pygbag's click-to-start gate, imposed
+    by browser autoplay policy.
+  - `PyMain: BrowserFS not found` / 404 on `//cdn/<ver>//browserfs.min.js` —
+    the loader asks for a file the local CDN cache does not carry. It only
+    affects the emulated writable filesystem, which Gravi already treats as
+    unavailable in the browser.
+  - 404s on `xterm*.js.map` and `/.well-known/appspecific/com.chrome.devtools.json`
+    — sourcemap and devtools probes, not app code.
+- After a rebuild, reload with a cache bypass (Ctrl+Shift+R). A normal reload
+  serves the previously cached `gravi.apk`, so a fix appears not to work.
