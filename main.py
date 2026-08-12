@@ -24,9 +24,10 @@ import pygame  # noqa: E402
 
 from gravi import config  # noqa: E402
 from gravi.field import Charge, FieldParams, charge_force  # noqa: E402
+from gravi.editor import RoomEditor  # noqa: E402
 from gravi.render import hud, neon  # noqa: E402
 from gravi.render.trail import Trail  # noqa: E402
-from gravi.room import load_room  # noqa: E402
+from gravi.room import load_room, save_room  # noqa: E402
 from gravi.sim import World, charge_from_input  # noqa: E402
 from gravi.tuning import TuningState  # noqa: E402
 
@@ -80,6 +81,7 @@ async def main() -> None:
 
     room = load_room(ROOM_PATH)
     world = build_world(room, tunables)
+    editor = RoomEditor(room)
     trail = Trail(config.TRAIL_MAX_POINTS)
 
     accumulator = 0.0
@@ -122,11 +124,41 @@ async def main() -> None:
                     tuning.restore_defaults()
                     status = "defaults restored"
                     status_timer = STATUS_DURATION
+                elif event.key == pygame.K_s and ctrl:
+                    ok = save_room(room, ROOM_PATH)
+                    status = "room saved" if ok else "save unavailable (browser build)"
+                    status_timer = STATUS_DURATION
+                elif event.key == pygame.K_DELETE:
+                    mx, my = pygame.mouse.get_pos()
+                    editor.delete(float(mx), float(my))
+                elif event.key in (pygame.K_LEFTBRACKET, pygame.K_RIGHTBRACKET):
+                    mx, my = pygame.mouse.get_pos()
+                    editor.resize_radius(
+                        float(mx), float(my),
+                        -1 if event.key == pygame.K_LEFTBRACKET else +1)
+                elif event.key in (pygame.K_COMMA, pygame.K_PERIOD):
+                    mx, my = pygame.mouse.get_pos()
+                    editor.resize_core(
+                        float(mx), float(my),
+                        -1 if event.key == pygame.K_COMMA else +1)
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if pygame.key.get_mods() & pygame.KMOD_ALT:
+                    mx, my = float(event.pos[0]), float(event.pos[1])
+                    if event.button == 1:
+                        editor.grab(mx, my)
+                    elif event.button == 3 and editor.hovered(mx, my) is None:
+                        editor.add(mx, my)
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                editor.release()
+            elif event.type == pygame.MOUSEMOTION and editor.dragging is not None:
+                # No Alt check here: releasing Alt mid-drag must not drop the node.
+                editor.drag(float(event.pos[0]), float(event.pos[1]))
 
         keys = pygame.key.get_pressed()
         mouse = pygame.mouse.get_pressed(num_buttons=3)
-        attract_held = keys[pygame.K_j] or mouse[0]
-        repel_held = keys[pygame.K_k] or mouse[2]
+        editing = bool(pygame.key.get_mods() & pygame.KMOD_ALT)
+        attract_held = (keys[pygame.K_j] or mouse[0]) and not editing
+        repel_held = (keys[pygame.K_k] or mouse[2]) and not editing
         charge = charge_from_input(attract_held, repel_held)
 
         # Held Left/Right sweeps a value. Done by hand rather than with

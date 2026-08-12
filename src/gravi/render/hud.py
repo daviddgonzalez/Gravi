@@ -12,7 +12,7 @@ HELP_LINES = (
     "J / LMB attract    K / RMB repel    R restart",
     "TAB overlay   UP/DOWN select   LEFT/RIGHT adjust   SHIFT x10",
     "F5 save preset   F9 load preset   F8 defaults",
-    "LMB-drag node   RMB empty add   DEL remove   [ ] radius   , . core",
+    "ALT+LMB drag node   ALT+RMB add   DEL remove   [ ] radius   , . core",
     "CTRL+S save room",
 )
 
