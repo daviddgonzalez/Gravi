@@ -47,12 +47,12 @@ class TunableSpec(NamedTuple):
 # default_tunables() and mutate that instead.
 TUNABLES: dict[str, TunableSpec] = {
     # Orbital period is 2*pi/sqrt(k_attract) and is independent of orbit size.
-    "k_attract":     TunableSpec(8.0,    0.5,   0.5,  60.0),
-    "k_repel":       TunableSpec(12.0,   0.5,   0.5, 120.0),
-    "force_max":     TunableSpec(4000.0, 100.0, 100.0, 20000.0),
-    "gravity_y":     TunableSpec(900.0,  25.0, -2000.0, 4000.0),
-    "speed_max":     TunableSpec(2000.0, 50.0,  100.0, 8000.0),
-    "player_radius": TunableSpec(9.0,    1.0,    2.0,   40.0),
+    "k_attract":     TunableSpec(15.0,   0.5,   0.5,  60.0),
+    "k_repel":       TunableSpec(15.0,   0.5,   0.5, 120.0),
+    "force_max":     TunableSpec(4500.0, 100.0, 100.0, 20000.0),
+    "gravity_y":     TunableSpec(500.0,  25.0, -2000.0, 4000.0),
+    "speed_max":     TunableSpec(600.0,  50.0,  100.0, 8000.0),
+    "player_radius": TunableSpec(7.0,    1.0,    2.0,   40.0),
 }
 
 

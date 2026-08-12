@@ -46,9 +46,9 @@ There is no jump, no directional movement, and no aim. Both inputs act on **the 
 Attract uses a **linear central force**, not inverse-square:
 
 ```
-attract:  F = k_a · r          toward center,  0 ≤ r ≤ R,  clamped to F_max
-repel:    F = k_r · (R − r)    away from center, 0 ≤ r ≤ R, clamped to F_max
-outside R: F = 0
+attract:  F = k_a · r          toward center,  clamped to F_max
+repel:    F = k_r · (R − r)    away from center, floored at 0, clamped to F_max
+outside R: F = 0, unless latched (see §2.2.1)
 ```
 
 where `r` is distance from the node center and `R` is the node's influence radius.
@@ -61,7 +61,19 @@ Rationale, in priority order:
 
 Attract and repel are deliberately asymmetric in range profile: **attract is a long-range whip** (strongest at the rim), **repel is a close-range kick** (strongest at contact, fading to nothing at the rim). Two distinct tools from one force system, with no overlap in role.
 
-The beam visibly **snaps** if the player leaves the radius while attracting.
+#### 2.2.1 The rope holds until you let go
+
+*Amended 2026-08-12, after the first slice 1 playtest. Supersedes the original rule that the beam snaps when the player leaves the influence radius.*
+
+The influence radius decides **where you can grab**, not **how long you can hold**. Once a charge connects to a node, the connection persists until the player releases it, even after they have stretched well outside the ring. Releasing is the only thing that breaks it.
+
+Consequences, all deliberate:
+
+- **The law does not change out there.** Attract stays `F = k_a · r`, so the rope keeps tightening the further it is stretched, until `F_max` caps it. No special case, and the beam-thickness cue stays honest — it still reads force magnitude anywhere on screen.
+- **Repel needs a floor.** Its `k_r · (R − r)` profile goes *negative* past the rim, which would silently invert a push into a pull. It is floored at zero, so a latched repel outside the ring simply does nothing. Repel remains a close-range kick.
+- **No handoff.** Flying into another node's ring while latched does not steal the rope. Swapping anchors costs a deliberate release-and-regrab, which is what makes chaining a rhythm rather than a drift.
+
+The change was made because the original rule broke the connection constantly at exactly the moment the player was committed to a swing. What replaced it: the ring is a target you must enter, and after that the only thing between you and the anchor is your own thumb.
 
 ### 2.3 Solid nodes are the entire balance system
 

@@ -208,13 +208,17 @@ async def main() -> None:
         screen.fill(config.COLOR_BG)
         neon.draw_trail(screen, trail.points())
 
-        active = world.active_node()
+        # The roped node is the one actually pulling, so it is the one that
+        # lights up and the one the beam points at — the player may well be
+        # outside its ring by now.
+        anchor = world.latched_node() or world.active_node()
         for node in room.nodes:
-            neon.draw_node(screen, node, is_active=node is active)
+            neon.draw_node(screen, node, is_active=node is anchor)
 
-        if active is not None and charge is not Charge.NEUTRAL and not world.dead:
-            fx, fy = charge_force(world.x, world.y, active, charge, world.params)
-            neon.draw_beam(screen, world.x, world.y, active, charge,
+        if anchor is not None and charge is not Charge.NEUTRAL and not world.dead:
+            fx, fy = charge_force(world.x, world.y, anchor, charge, world.params,
+                                  ignore_radius=world.latched_node() is not None)
+            neon.draw_beam(screen, world.x, world.y, anchor, charge,
                            math.hypot(fx, fy), world.params.force_max)
 
         if not world.dead:

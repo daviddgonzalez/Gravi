@@ -58,12 +58,20 @@ class Node:
 
 
 def charge_force(
-    px: float, py: float, node: Node, charge: Charge, params: FieldParams
+    px: float, py: float, node: Node, charge: Charge, params: FieldParams,
+    ignore_radius: bool = False,
 ) -> Vec:
     """Force on a unit-mass player at (px, py) from `node` under `charge`.
 
     Returns (0.0, 0.0) when neutral, outside the influence radius, or exactly
     at the node centre.
+
+    `ignore_radius=True` drops the influence-radius cutoff, for a player who
+    latched onto this node while inside it and has since stretched past the
+    rim (see World.step). The law is unchanged out there — attract is still
+    F = k*r, so the rope keeps tightening with distance until force_max caps
+    it. Repel is the one that needs a floor: its k*(R - r) profile goes
+    negative past the rim, which would silently invert a push into a pull.
     """
     if charge is Charge.NEUTRAL:
         return (0.0, 0.0)
@@ -72,7 +80,7 @@ def charge_force(
     dy = node.y - py
     r = math.hypot(dx, dy)
 
-    if r > node.radius or r < _EPSILON:
+    if r < _EPSILON or (r > node.radius and not ignore_radius):
         return (0.0, 0.0)
 
     if charge is Charge.ATTRACT:
@@ -82,7 +90,7 @@ def charge_force(
         magnitude = params.k_repel * (node.radius - r)
         sign = -1.0
 
-    magnitude = min(magnitude, params.force_max)
+    magnitude = min(max(0.0, magnitude), params.force_max)
     ux = dx / r
     uy = dy / r
     return (sign * magnitude * ux, sign * magnitude * uy)

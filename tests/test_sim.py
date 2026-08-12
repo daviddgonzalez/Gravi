@@ -130,6 +130,113 @@ def test_speed_is_clamped_to_speed_max():
     assert math.hypot(w.vx, w.vy) <= 50.0 + 1e-9
 
 
+def test_latch_survives_leaving_the_influence_radius():
+    """The rope does not snap at the rim — it holds until the player lets go."""
+    node = Node(400.0, 400.0, 150.0, 5.0)
+    w = make_world(nodes=[node], height=1e6)
+    # Orbits under F = k*r are bound, with far semi-axis v/sqrt(k). At k=8
+    # that needs v > 150*sqrt(8) = 424 px/s to reach past a 150px ring at all.
+    w.vy = -800.0
+    went_outside = False
+    for _ in range(240):
+        w.step(Charge.ATTRACT)
+        assert not w.dead
+        assert w.latched_node() is node, "the rope must never snap on its own"
+        if math.hypot(w.x - node.x, w.y - node.y) > node.radius:
+            went_outside = True
+            assert w.active_node() is None, "outside every ring by the old rule"
+    assert went_outside, "test is meaningless unless the player left the ring"
+
+
+def test_releasing_drops_the_latch():
+    node = Node(400.0, 400.0, 150.0, 5.0)
+    w = make_world(nodes=[node], height=1e6)
+    w.vy = -800.0
+    for _ in range(240):
+        w.step(Charge.ATTRACT)
+    assert w.latched_node() is node
+    w.step(Charge.NEUTRAL)
+    assert w.latched_node() is None
+
+
+def test_latch_does_not_hand_off_to_a_nearer_node_while_held():
+    """Flying into another node's ring must not steal the rope."""
+    first = Node(300.0, 400.0, 120.0, 5.0)
+    second = Node(900.0, 400.0, 400.0, 5.0)
+    w = make_world(spawn=(300.0, 350.0), nodes=[first, second])
+    # Fast enough that the bound orbit around `first` reaches x=618, well
+    # inside the second ring, which starts at x=500.
+    w.vx = 900.0
+    entered_second_ring = False
+    for _ in range(240):
+        w.step(Charge.ATTRACT)
+        if w.dead:
+            break
+        if math.hypot(w.x - second.x, w.y - second.y) <= second.radius:
+            entered_second_ring = True
+            assert w.latched_node() is first
+    assert entered_second_ring, "test is meaningless unless the second ring was entered"
+
+
+def test_latch_forms_on_entry_when_the_charge_is_already_held():
+    """Holding attract before reaching a node still grabs the first one met."""
+    node = Node(400.0, 400.0, 100.0, 5.0)
+    w = make_world(spawn=(400.0, 100.0), nodes=[node], height=1e6)
+    assert w.active_node() is None
+    w.step(Charge.ATTRACT)
+    assert w.latched_node() is None, "nothing in reach yet"
+    w.vy = 300.0
+    for _ in range(240):
+        w.step(Charge.ATTRACT)
+        if w.latched_node() is not None:
+            break
+    assert w.latched_node() is node
+
+
+def test_latched_repel_never_inverts_into_a_pull():
+    """k_repel*(R - r) goes negative past the rim; that must floor at zero,
+    not turn a push into a pull."""
+    node = Node(400.0, 400.0, 100.0, 5.0)
+    # Spawn inside the ring, or no rope can form in the first place.
+    w = make_world(spawn=(400.0, 350.0), nodes=[node], height=1e6)
+    w.vy = -600.0  # heading away, straight out through the top of the ring
+    for _ in range(120):
+        w.step(Charge.REPEL)
+    assert w.latched_node() is node
+    assert math.hypot(w.x - node.x, w.y - node.y) > node.radius
+    assert w.vy <= -600.0, "a latched repel must never drag the player back in"
+
+
+def test_reset_clears_the_latch():
+    node = Node(400.0, 400.0, 250.0, 18.0)
+    w = make_world(nodes=[node])
+    w.step(Charge.ATTRACT)
+    assert w.latched_node() is node
+    w.reset()
+    assert w.latched_node() is None
+
+
+def test_latch_survives_the_node_being_dragged_by_the_editor():
+    """The editor replaces a Node in place while the player may be latched to
+    it; the rope must follow the node, not a stale copy."""
+    w = make_world(nodes=[Node(400.0, 400.0, 250.0, 18.0)])
+    w.step(Charge.ATTRACT)
+    assert w.latched_node() is w.room.nodes[0]
+    w.room.nodes[0] = Node(500.0, 300.0, 250.0, 18.0)
+    w.step(Charge.ATTRACT)
+    assert w.latched_node() is w.room.nodes[0]
+    assert (w.latched_node().x, w.latched_node().y) == (500.0, 300.0)
+
+
+def test_latch_clears_when_the_node_is_deleted():
+    w = make_world(nodes=[Node(400.0, 400.0, 250.0, 18.0)])
+    w.step(Charge.ATTRACT)
+    assert w.latched_node() is not None
+    w.room.nodes.clear()
+    w.step(Charge.ATTRACT)
+    assert w.latched_node() is None
+
+
 def test_charge_from_input_maps_all_four_combinations():
     assert charge_from_input(True, False) is Charge.ATTRACT
     assert charge_from_input(False, True) is Charge.REPEL

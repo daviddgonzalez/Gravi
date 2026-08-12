@@ -47,6 +47,7 @@ class World:
         self.vy = 0.0
         self.dead = False
         self.elapsed = 0.0
+        self._latch_index: int | None = None
         self.reset()
 
     def reset(self) -> None:
@@ -55,6 +56,7 @@ class World:
         self.vy = 0.0
         self.dead = False
         self.elapsed = 0.0
+        self._latch_index = None
 
     def active_node(self) -> Node | None:
         """Nearest node whose influence radius contains the player. Ties break
@@ -70,6 +72,38 @@ class World:
                 best_distance = distance
         return best
 
+    def latched_node(self) -> Node | None:
+        """The node currently roped to, or None. Tracked by index rather than
+        by value because `Node` is frozen and compares by value: the editor
+        replaces a node in place when you drag it, and the rope must follow
+        the node to its new position instead of pointing at a stale copy."""
+        if self._latch_index is None:
+            return None
+        if self._latch_index >= len(self.room.nodes):
+            # The editor deleted it out from under us.
+            self._latch_index = None
+            return None
+        return self.room.nodes[self._latch_index]
+
+    def _update_latch(self, charge: Charge) -> Node | None:
+        """Releasing drops the rope; holding keeps it, even once the player
+        has stretched outside the influence radius. A held charge with no rope
+        yet grabs the first node that comes into reach, so flying into a field
+        with the button already down still connects."""
+        if charge is Charge.NEUTRAL:
+            self._latch_index = None
+            return None
+
+        current = self.latched_node()
+        if current is not None:
+            return current
+
+        node = self.active_node()
+        if node is None:
+            return None
+        self._latch_index = self.room.nodes.index(node)
+        return node
+
     def step(self, charge: Charge) -> None:
         """Advance one fixed timestep. No-op once dead."""
         if self.dead:
@@ -78,9 +112,10 @@ class World:
         ax = 0.0
         ay = self.gravity_y  # mass is fixed at 1.0, so force == acceleration
 
-        node = self.active_node()
+        node = self._update_latch(charge)
         if node is not None:
-            fx, fy = charge_force(self.x, self.y, node, charge, self.params)
+            fx, fy = charge_force(self.x, self.y, node, charge, self.params,
+                                  ignore_radius=True)
             ax += fx
             ay += fy
 
