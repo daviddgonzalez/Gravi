@@ -7,6 +7,16 @@ separate HUD for any of that.
 Performance note that matters for the browser build: glow is expensive if you
 generate gradients every frame. Every glow here is baked once into a surface,
 cached by (colour, radius), and blitted with BLEND_ADD.
+
+**Intensity lives in RGB magnitude, never in an alpha channel.** BLEND_ADD is
+BLEND_RGB_ADD: it adds the source RGB to the destination and does not look at
+the source alpha at all. Setting a colour to `(*rgb, 40)` and compositing it
+additively therefore draws it at full brightness — the alpha is computed and
+silently discarded. This module got that wrong once, and the result was flat
+discs instead of glow, identical active and inactive rings, and a beam whose
+brightness never moved with force. Every surface here is a plain (non-alpha)
+Surface on black, because black adds nothing under BLEND_ADD, and every
+intensity is folded into the colour with `_scaled`.
 """
 
 from __future__ import annotations
@@ -23,17 +33,30 @@ _ring_cache: dict[tuple[int, int], pygame.Surface] = {}
 _scratch: pygame.Surface | None = None
 
 
+def _scaled(color: tuple[int, int, int], intensity: float) -> tuple[int, int, int]:
+    """Fold an intensity in 0..1 into the colour itself.
+
+    This is the additive-blending equivalent of setting alpha, and the only
+    one that works: see the module docstring.
+    """
+    i = 0.0 if intensity < 0.0 else (1.0 if intensity > 1.0 else intensity)
+    return (int(color[0] * i), int(color[1] * i), int(color[2] * i))
+
+
 def _scratch_layer(size: tuple[int, int]) -> pygame.Surface:
-    """One reusable full-screen alpha layer, cleared per use. Allocating a
-    1280x720 SRCALPHA surface twice a frame is the obvious WASM cliff.
+    """One reusable full-screen layer, cleared per use. Allocating a 1280x720
+    surface twice a frame is the obvious WASM cliff.
+
+    Plain, not SRCALPHA: additive compositing needs no alpha channel, and a
+    non-alpha blit is materially cheaper.
 
     Callers MUST blit their result before anyone else calls this — it is a
     single shared buffer, not a pool.
     """
     global _scratch
     if _scratch is None or _scratch.get_size() != size:
-        _scratch = pygame.Surface(size, pygame.SRCALPHA)
-    _scratch.fill((0, 0, 0, 0))
+        _scratch = pygame.Surface(size)
+    _scratch.fill((0, 0, 0))
     return _scratch
 
 
@@ -45,14 +68,12 @@ def _glow_sprite(color: tuple[int, int, int], radius: int) -> pygame.Surface:
         return cached
 
     size = radius * 2
-    surface = pygame.Surface((size, size), pygame.SRCALPHA)
+    surface = pygame.Surface((size, size))
     for step in range(radius, 0, -1):
         # Quadratic falloff reads closer to real light than a linear ramp.
         t = step / radius
-        alpha = int(255 * (1.0 - t) ** 2)
-        if alpha <= 0:
-            continue
-        pygame.draw.circle(surface, (*color, alpha), (radius, radius), step)
+        pygame.draw.circle(surface, _scaled(color, (1.0 - t) ** 2),
+                           (radius, radius), step)
     _glow_cache[key] = surface
     return surface
 
@@ -64,17 +85,18 @@ def draw_glow(surface: pygame.Surface, x: float, y: float,
                  special_flags=pygame.BLEND_ADD)
 
 
-def _ring_sprite(radius: int, alpha: int) -> pygame.Surface:
+def _ring_sprite(radius: int, level: int) -> pygame.Surface:
     """The influence-radius ring, baked and cached — it is redrawn every frame
-    for every node, so it must never be reallocated per frame."""
-    key = (radius, alpha)
+    for every node, so it must never be reallocated per frame. `level` is the
+    brightness in 0..255, folded into the colour rather than into alpha."""
+    key = (radius, level)
     cached = _ring_cache.get(key)
     if cached is not None:
         return cached
 
     size = radius * 2 + 4
-    surface = pygame.Surface((size, size), pygame.SRCALPHA)
-    pygame.draw.circle(surface, (*config.COLOR_NODE, alpha),
+    surface = pygame.Surface((size, size))
+    pygame.draw.circle(surface, _scaled(config.COLOR_NODE, level / 255.0),
                        (radius + 2, radius + 2), radius, width=2)
     _ring_cache[key] = surface
     return surface
@@ -83,7 +105,7 @@ def _ring_sprite(radius: int, alpha: int) -> pygame.Surface:
 def draw_node(surface: pygame.Surface, node, is_active: bool) -> None:
     """Influence ring at `node.radius`, lethal core at `node.core_radius`."""
     radius = int(node.radius)
-    ring = _ring_sprite(radius, 70 if is_active else 34)
+    ring = _ring_sprite(radius, 110 if is_active else 40)
     surface.blit(ring, (int(node.x) - radius - 2, int(node.y) - radius - 2),
                  special_flags=pygame.BLEND_ADD)
 
@@ -104,10 +126,10 @@ def draw_beam(surface: pygame.Surface, px: float, py: float, node,
     color = (config.COLOR_BEAM_ATTRACT if charge is Charge.ATTRACT
              else config.COLOR_BEAM_REPEL)
     width = max(1, int(1 + strength * 7))
-    alpha = int(60 + strength * 195)
+    tint = _scaled(color, (60 + strength * 195) / 255.0)
 
     layer = _scratch_layer(surface.get_size())
-    pygame.draw.line(layer, (*color, alpha), (px, py), (node.x, node.y), width)
+    pygame.draw.line(layer, tint, (px, py), (node.x, node.y), width)
     surface.blit(layer, (0, 0), special_flags=pygame.BLEND_ADD)
 
 
@@ -125,8 +147,7 @@ def draw_trail(surface: pygame.Surface, points) -> None:
     total = len(points)
     for index in range(1, total):
         t = index / total
-        alpha = int(8 + 120 * t * t)
-        pygame.draw.line(layer, (*config.COLOR_TRAIL, alpha),
+        pygame.draw.line(layer, _scaled(config.COLOR_TRAIL, (8 + 120 * t * t) / 255.0),
                          points[index - 1], points[index], 2)
     surface.blit(layer, (0, 0), special_flags=pygame.BLEND_ADD)
 
