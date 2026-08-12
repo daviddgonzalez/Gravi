@@ -32,6 +32,7 @@ class World:
         gravity_y: float,
         player_radius: float,
         speed_max: float,
+        fall_speed_max: float = math.inf,
         dt: float = PHYS_DT,
     ) -> None:
         self.room = room
@@ -39,6 +40,7 @@ class World:
         self.gravity_y = gravity_y
         self.player_radius = player_radius
         self.speed_max = speed_max
+        self.fall_speed_max = fall_speed_max
         self.dt = dt
 
         self.x = 0.0
@@ -122,11 +124,16 @@ class World:
         self.vx += ax * self.dt
         self.vy += ay * self.dt
 
-        speed = math.hypot(self.vx, self.vy)
-        if speed > self.speed_max and speed > 0.0:
-            scale = self.speed_max / speed
-            self.vx *= scale
-            self.vy *= scale
+        # Horizontal and downward speed are bounded separately, never as one
+        # |v| clamp. An isotropic clamp rescales the whole vector, so the
+        # downward velocity gravity keeps adding gets paid for out of the
+        # player's horizontal velocity — every swing bleeds its carry while
+        # total speed sits pinned at the cap. Upward speed is left uncapped
+        # so a slingshot can still fling.
+        if abs(self.vx) > self.speed_max:
+            self.vx = math.copysign(self.speed_max, self.vx)
+        if self.vy > self.fall_speed_max:
+            self.vy = self.fall_speed_max
 
         self.x += self.vx * self.dt
         self.y += self.vy * self.dt

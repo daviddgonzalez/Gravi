@@ -94,6 +94,22 @@ Charged **surfaces** obey the same law. Repel off a wall to launch without touch
 
 Gravity stays, and it is the engine. The player is always falling, so nodes are always precious and any gap without them is a real threat. It also means a run can never stall, which satisfies the constant-flow requirement through physics rather than a forced-scroll camera.
 
+#### 2.4.1 Speed is bounded per axis, never as one vector
+
+*Added 2026-08-12, after the slice 1 playtest.*
+
+Horizontal speed and downward speed have **separate** caps. Upward speed has none.
+
+This looks fussy and is not. A single isotropic clamp on `|v|` rescales the whole velocity vector, so the downward velocity gravity keeps adding is paid for out of the player's *horizontal* velocity. Measured on the slice 1 build: launched flat at the 600 px/s cap under `gravity_y = 500`, horizontal speed bled from 600 to 439 in one second while `|v|` sat pinned at 600 the entire time. Gravity was silently rotating momentum from sideways to downward, so every swing lost its carry and the player could feel it without being able to name it.
+
+The consequences of the split:
+
+- **Horizontal carry is untouchable by gravity.** A swing's exit speed is the speed it keeps.
+- **Fall speed still saturates**, so the player reliably drops into the next ring instead of accelerating forever. This is the terminal velocity that makes descent readable.
+- **Upward speed is deliberately uncapped.** Capping it would blunt the slingshot the entire game is built on.
+
+Air friction was considered for this and rejected: drag removes horizontal speed too, so it makes the carry problem worse, not better. Measured sideways carry over a 400px drop was 690px with the isotropic clamp, 607px with linear drag at 0.5/s, and 372px at 1.5/s.
+
 ---
 
 ## 3. The run

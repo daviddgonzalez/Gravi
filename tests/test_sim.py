@@ -10,7 +10,7 @@ PARAMS = FieldParams(k_attract=8.0, k_repel=12.0, force_max=1e9)
 
 
 def make_world(gravity_y=0.0, spawn=(300.0, 400.0), nodes=None,
-               width=1280.0, height=720.0, speed_max=1e9):
+               width=1280.0, height=720.0, speed_max=1e9, fall_speed_max=1e9):
     room = Room(
         spawn=spawn,
         nodes=nodes if nodes is not None else [Node(400.0, 400.0, 250.0, 18.0)],
@@ -18,7 +18,8 @@ def make_world(gravity_y=0.0, spawn=(300.0, 400.0), nodes=None,
         height=height,
     )
     return World(room=room, params=PARAMS, gravity_y=gravity_y,
-                 player_radius=9.0, speed_max=speed_max)
+                 player_radius=9.0, speed_max=speed_max,
+                 fall_speed_max=fall_speed_max)
 
 
 def test_gravity_accelerates_the_player_downward():
@@ -123,11 +124,44 @@ def test_orbit_stays_bounded_for_ten_seconds():
     assert max(distances) < 110.0
 
 
-def test_speed_is_clamped_to_speed_max():
-    w = make_world(gravity_y=10000.0, nodes=[], height=1e6, speed_max=50.0)
+def test_fall_speed_is_clamped():
+    w = make_world(gravity_y=10000.0, nodes=[], height=1e6, fall_speed_max=50.0)
     for _ in range(240):
         w.step(Charge.NEUTRAL)
-    assert math.hypot(w.vx, w.vy) <= 50.0 + 1e-9
+    assert w.vy <= 50.0 + 1e-9
+
+
+def test_horizontal_speed_is_clamped_independently():
+    w = make_world(gravity_y=0.0, nodes=[], height=1e6, speed_max=50.0)
+    w.vx = 5000.0
+    w.step(Charge.NEUTRAL)
+    assert abs(w.vx) <= 50.0 + 1e-9
+    w.vx = -5000.0
+    w.step(Charge.NEUTRAL)
+    assert w.vx >= -50.0 - 1e-9
+
+
+def test_gravity_never_taxes_horizontal_carry():
+    """The gripe this split exists to fix. Under a single isotropic |v| clamp,
+    gravity buys its downward velocity with the player's horizontal velocity:
+    launched flat at the cap, vx bled from 600 to 439 in one second while |v|
+    sat pinned at 600. Horizontal carry must now be untouchable by gravity."""
+    w = make_world(gravity_y=500.0, nodes=[], height=1e6,
+                   speed_max=600.0, fall_speed_max=600.0)
+    w.vx = 600.0
+    for _ in range(240):  # one second of falling
+        w.step(Charge.NEUTRAL)
+    assert w.vx == pytest.approx(600.0), "gravity stole horizontal speed"
+    assert w.vy > 0.0, "test is meaningless unless the player is actually falling"
+
+
+def test_upward_speed_is_not_capped_by_the_fall_limit():
+    """A slingshot must be allowed to fling the player upward faster than
+    terminal fall speed, or the launch the whole game is built on gets blunted."""
+    w = make_world(gravity_y=0.0, nodes=[], height=1e6, fall_speed_max=50.0)
+    w.vy = -900.0
+    w.step(Charge.NEUTRAL)
+    assert w.vy == pytest.approx(-900.0)
 
 
 def test_latch_survives_leaving_the_influence_radius():

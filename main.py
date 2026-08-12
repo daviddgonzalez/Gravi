@@ -50,6 +50,7 @@ def build_world(room, tunables: dict[str, float]) -> World:
         gravity_y=tunables["gravity_y"],
         player_radius=tunables["player_radius"],
         speed_max=tunables["speed_max"],
+        fall_speed_max=tunables["fall_speed_max"],
     )
 
 
@@ -63,6 +64,7 @@ def apply_tunables(world: World, tunables: dict[str, float]) -> None:
     world.gravity_y = tunables["gravity_y"]
     world.player_radius = tunables["player_radius"]
     world.speed_max = tunables["speed_max"]
+    world.fall_speed_max = tunables["fall_speed_max"]
 
 
 async def main() -> None:

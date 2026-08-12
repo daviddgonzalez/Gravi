@@ -51,8 +51,15 @@ TUNABLES: dict[str, TunableSpec] = {
     "k_repel":       TunableSpec(15.0,   0.5,   0.5, 120.0),
     "force_max":     TunableSpec(4500.0, 100.0, 100.0, 20000.0),
     "gravity_y":     TunableSpec(500.0,  25.0, -2000.0, 4000.0),
-    "speed_max":     TunableSpec(600.0,  50.0,  100.0, 8000.0),
-    "player_radius": TunableSpec(7.0,    1.0,    2.0,   40.0),
+    # speed_max bounds HORIZONTAL speed only, and fall_speed_max bounds
+    # downward speed. They are deliberately separate: a single isotropic
+    # clamp on |v| makes gravity pay for its downward velocity out of the
+    # player's horizontal velocity, so every swing silently loses its carry
+    # while total speed sits pinned at the cap. Upward speed is uncapped —
+    # capping it would blunt exactly the slingshot the game is built on.
+    "speed_max":      TunableSpec(600.0,  50.0,  100.0, 8000.0),
+    "fall_speed_max": TunableSpec(600.0,  50.0,  100.0, 8000.0),
+    "player_radius":  TunableSpec(7.0,    1.0,    2.0,   40.0),
 }
 
 
