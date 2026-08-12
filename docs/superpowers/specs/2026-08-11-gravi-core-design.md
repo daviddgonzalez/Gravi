@@ -262,7 +262,7 @@ This extends a principle BlueBall's `streaming.py` already documented: the train
 
 ### 8.2 Ported from BlueBall (by copy)
 
-- **`World`** as the headless source of truth. Role unchanged; physics contract changes underneath.
+- **`World`** as the headless source of truth. Role unchanged; physics contract changes underneath. Note that BlueBall's `World` wraps a Pymunk space and Gravi's does not — see §8.6. What ports is the *role* and the headless discipline, not the implementation.
 - **The streaming architecture.** `TerrainStream` is shaped correctly already — lazily materialise ahead, cull behind, seeded, shared with the trainer. Chambers replace chunks; gravity arrows replace the linear advance. The content dies, the machine survives.
 - **The `ai/` package** as the §4 instrument. `ga.py`, `genome.py`, `trainer.py`, `persistence.py`, `episodes.py`, `metrics.py` carry over nearly intact. `observation.py` and `fitness.py` are **rewritten**: raycasts, ability bits and key bits give way to a node-field encoding (relative position, charge, radius and remaining life for the nearest few nodes, plus velocity, gravity direction, and arrow bearing).
 - Scenes, audio, save, and the pytest setup.
@@ -292,6 +292,23 @@ This extends a principle BlueBall's `streaming.py` already documented: the train
 ### 8.5 Repo
 
 New repo at `~/projects/Gravi`, fresh `git init`. BlueBall stays exactly as-is; survivors are ported by copying modules, not by branching or moving. The point of not reusing the repo is that everything arriving is a deliberate port rather than inherited baggage.
+
+### 8.6 Web target, and why there is no physics engine
+
+*Added 2026-08-11, after the sections above: Gravi must be deployable to a website.*
+
+The browser build uses **pygbag**, which packages a pygame-ce app to WebAssembly. Two consequences ripple through everything else:
+
+**No physics engine.** Pymunk is a C/CFFI extension with no working browser story, so it cannot come along. This turns out to cost nothing and buy a lot. Gravi's player is a point mass under gravity plus at most one central force, and the only contact test is circle-versus-circle, so a hand-written semi-implicit Euler integrator is a few dozen lines. It is exactly deterministic (§9), trivially satisfies the shared-force-law constraint (§8.1), and runs orders of magnitude faster headless — which matters directly for §4.2, where validation depends on affording thousands of rollouts per parameter box. A symplectic integrator is specified deliberately: a linear central force is a harmonic oscillator, and symplectic integrators do not pump energy into oscillators, so orbits stay stable rather than spiralling.
+
+**Constraints the browser imposes on all later slices:**
+
+- The frame loop must be `async` and yield each frame, or the tab locks up. Cheap to do from the first commit, painful to retrofit.
+- Every runtime dependency must survive WebAssembly. Slice 1 ships with pygame-ce and nothing else.
+- There is no writable filesystem in the browser. Anything that saves (tuning presets, edited rooms, the player model of §5.2, personal-best paths of §6) must fail soft rather than raise, and will eventually need browser-side persistence.
+- The offline validator and trainer of §4 run natively as a build step, never in the browser. Their output ships as a data file.
+
+**Verify this early.** The very first implementation task after the skeleton is to prove a blank pygbag build loads in a browser, because if it does not, the stack decision changes and every task after it changes with it.
 
 ---
 
@@ -351,6 +368,8 @@ Everything above rests on one unverified assumption: **whipping around a solid n
 | "Learns you" | Player model + offline brain selection | Live retraining is untunable; selection keeps a difficulty dial |
 | Art | Neon at native resolution; no pixel pipeline | Light is the ruleset; also deletes the rotation-shimmer problem |
 | Repo | New repo at `~/projects/Gravi`; BlueBall untouched | Ports are deliberate, not inherited |
+| Deployment | Browser build via pygbag, alongside desktop | Added 2026-08-11; the game must be playable from a website |
+| Physics engine | **None** — hand-written symplectic integrator | Pymunk cannot run in the browser, and a point mass under one central force does not need a solver (§8.6) |
 
 ## 12. Open questions
 
