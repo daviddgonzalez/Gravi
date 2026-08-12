@@ -46,9 +46,9 @@ There is no jump, no directional movement, and no aim. Both inputs act on **the 
 Attract uses a **linear central force**, not inverse-square:
 
 ```
-attract:  F = k_a · r          toward center,  0 ≤ r ≤ R,  clamped to F_max
-repel:    F = k_r · (R − r)    away from center, 0 ≤ r ≤ R, clamped to F_max
-outside R: F = 0
+attract:  F = k_a · r          toward center,  clamped to F_max
+repel:    F = k_r · (R − r)    away from center, floored at 0, clamped to F_max
+outside R: F = 0, unless latched (see §2.2.1)
 ```
 
 where `r` is distance from the node center and `R` is the node's influence radius.
@@ -61,7 +61,19 @@ Rationale, in priority order:
 
 Attract and repel are deliberately asymmetric in range profile: **attract is a long-range whip** (strongest at the rim), **repel is a close-range kick** (strongest at contact, fading to nothing at the rim). Two distinct tools from one force system, with no overlap in role.
 
-The beam visibly **snaps** if the player leaves the radius while attracting.
+#### 2.2.1 The rope holds until you let go
+
+*Amended 2026-08-12, after the first slice 1 playtest. Supersedes the original rule that the beam snaps when the player leaves the influence radius.*
+
+The influence radius decides **where you can grab**, not **how long you can hold**. Once a charge connects to a node, the connection persists until the player releases it, even after they have stretched well outside the ring. Releasing is the only thing that breaks it.
+
+Consequences, all deliberate:
+
+- **The law does not change out there.** Attract stays `F = k_a · r`, so the rope keeps tightening the further it is stretched, until `F_max` caps it. No special case, and the beam-thickness cue stays honest — it still reads force magnitude anywhere on screen.
+- **Repel needs a floor.** Its `k_r · (R − r)` profile goes *negative* past the rim, which would silently invert a push into a pull. It is floored at zero, so a latched repel outside the ring simply does nothing. Repel remains a close-range kick.
+- **No handoff.** Flying into another node's ring while latched does not steal the rope. Swapping anchors costs a deliberate release-and-regrab, which is what makes chaining a rhythm rather than a drift.
+
+The change was made because the original rule broke the connection constantly at exactly the moment the player was committed to a swing. What replaced it: the ring is a target you must enter, and after that the only thing between you and the anchor is your own thumb.
 
 ### 2.3 Solid nodes are the entire balance system
 
@@ -81,6 +93,22 @@ Charged **surfaces** obey the same law. Repel off a wall to launch without touch
 ### 2.4 Gravity
 
 Gravity stays, and it is the engine. The player is always falling, so nodes are always precious and any gap without them is a real threat. It also means a run can never stall, which satisfies the constant-flow requirement through physics rather than a forced-scroll camera.
+
+#### 2.4.1 Speed is bounded per axis, never as one vector
+
+*Added 2026-08-12, after the slice 1 playtest.*
+
+Horizontal speed and downward speed have **separate** caps. Upward speed has none.
+
+This looks fussy and is not. A single isotropic clamp on `|v|` rescales the whole velocity vector, so the downward velocity gravity keeps adding is paid for out of the player's *horizontal* velocity. Measured on the slice 1 build: launched flat at the 600 px/s cap under `gravity_y = 500`, horizontal speed bled from 600 to 439 in one second while `|v|` sat pinned at 600 the entire time. Gravity was silently rotating momentum from sideways to downward, so every swing lost its carry and the player could feel it without being able to name it.
+
+The consequences of the split:
+
+- **Horizontal carry is untouchable by gravity.** A swing's exit speed is the speed it keeps.
+- **Fall speed still saturates**, so the player reliably drops into the next ring instead of accelerating forever. This is the terminal velocity that makes descent readable.
+- **Upward speed is deliberately uncapped.** Capping it would blunt the slingshot the entire game is built on.
+
+Air friction was considered for this and rejected: drag removes horizontal speed too, so it makes the carry problem worse, not better. Measured sideways carry over a 400px drop was 690px with the isotropic clamp, 607px with linear drag at 0.5/s, and 372px at 1.5/s.
 
 ---
 

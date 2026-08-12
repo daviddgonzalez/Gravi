@@ -1,0 +1,9 @@
+{
+  "fall_speed_max": 600.0,
+  "force_max": 4500.0,
+  "gravity_y": 500.0,
+  "k_attract": 15.0,
+  "k_repel": 15.0,
+  "player_radius": 7.0,
+  "speed_max": 600.0
+}
