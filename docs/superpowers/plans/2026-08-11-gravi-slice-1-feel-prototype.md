@@ -121,6 +121,8 @@ starting point a session begins from."""
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 # Display
 WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720
@@ -145,22 +147,35 @@ COLOR_HUD = (200, 220, 235)
 # Trail
 TRAIL_MAX_POINTS = 900  # ~15 s at 60 fps
 
+
+class TunableSpec(NamedTuple):
+    default: float
+    step: float
+    lo: float
+    hi: float
+
+
 # Live-tunable simulation values. Name -> (default, step, min, max).
 # The HUD iterates this dict in insertion order.
-TUNABLES: dict[str, tuple[float, float, float, float]] = {
+#
+# TUNABLES itself must never be mutated directly — it is the process-wide
+# set of starting points. Callers that need to adjust values in place (e.g.
+# the HUD overlay in render/hud.py) take a per-session copy via
+# default_tunables() and mutate that instead.
+TUNABLES: dict[str, TunableSpec] = {
     # Orbital period is 2*pi/sqrt(k_attract) and is independent of orbit size.
-    "k_attract":     (8.0,    0.5,   0.5,  60.0),
-    "k_repel":       (12.0,   0.5,   0.5, 120.0),
-    "force_max":     (4000.0, 100.0, 100.0, 20000.0),
-    "gravity_y":     (900.0,  25.0, -2000.0, 4000.0),
-    "speed_max":     (2000.0, 50.0,  100.0, 8000.0),
-    "player_radius": (9.0,    1.0,    2.0,   40.0),
+    "k_attract":     TunableSpec(8.0,    0.5,   0.5,  60.0),
+    "k_repel":       TunableSpec(12.0,   0.5,   0.5, 120.0),
+    "force_max":     TunableSpec(4000.0, 100.0, 100.0, 20000.0),
+    "gravity_y":     TunableSpec(900.0,  25.0, -2000.0, 4000.0),
+    "speed_max":     TunableSpec(2000.0, 50.0,  100.0, 8000.0),
+    "player_radius": TunableSpec(9.0,    1.0,    2.0,   40.0),
 }
 
 
 def default_tunables() -> dict[str, float]:
     """A fresh mutable name -> value mapping seeded from TUNABLES defaults."""
-    return {name: spec[0] for name, spec in TUNABLES.items()}
+    return {name: spec.default for name, spec in TUNABLES.items()}
 ```
 
 - [ ] **Step 3: Write the failing test `tests/test_config.py`**
@@ -2198,6 +2213,9 @@ git commit -m "docs: slice 1 feel verdict and locked-in tuning"
 ---
 
 ## Notes for whoever executes this
+
+- **Run pytest as `env PYTHONPATH= pytest -q` on this machine.** The dev box sources ROS Jazzy in `.bashrc`, which sets a global `PYTHONPATH` that leaks a broken `launch_testing` plugin into pytest's autoload. Bare `pytest` dies with a traceback that has nothing to do with this project.
+- **Never run `python main.py` bare from an agent** — it opens a real window and blocks forever. Use `env PYTHONPATH= SDL_VIDEODRIVER=dummy timeout 5 python main.py; echo "exit=$?"` and treat exit code **124** as the pass signal (a healthy loop ran the full timeout). The real visual check belongs to the human.
 
 - **Task 2 is a stop-the-world task.** If pygbag cannot package the app, do not continue to Task 3 — raise it, because the stack decision and every later task depend on the answer.
 - **Do not add dependencies.** Every runtime import has to survive WebAssembly. If something seems to need numpy, it does not in slice 1.

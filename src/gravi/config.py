@@ -4,6 +4,8 @@ starting point a session begins from."""
 
 from __future__ import annotations
 
+from typing import NamedTuple
+
 # Display
 WINDOW_WIDTH = 1280
 WINDOW_HEIGHT = 720
@@ -28,19 +30,32 @@ COLOR_HUD = (200, 220, 235)
 # Trail
 TRAIL_MAX_POINTS = 900  # ~15 s at 60 fps
 
+
+class TunableSpec(NamedTuple):
+    default: float
+    step: float
+    lo: float
+    hi: float
+
+
 # Live-tunable simulation values. Name -> (default, step, min, max).
 # The HUD iterates this dict in insertion order.
-TUNABLES: dict[str, tuple[float, float, float, float]] = {
+#
+# TUNABLES itself must never be mutated directly — it is the process-wide
+# set of starting points. Callers that need to adjust values in place (e.g.
+# the HUD overlay in render/hud.py) take a per-session copy via
+# default_tunables() and mutate that instead.
+TUNABLES: dict[str, TunableSpec] = {
     # Orbital period is 2*pi/sqrt(k_attract) and is independent of orbit size.
-    "k_attract":     (8.0,    0.5,   0.5,  60.0),
-    "k_repel":       (12.0,   0.5,   0.5, 120.0),
-    "force_max":     (4000.0, 100.0, 100.0, 20000.0),
-    "gravity_y":     (900.0,  25.0, -2000.0, 4000.0),
-    "speed_max":     (2000.0, 50.0,  100.0, 8000.0),
-    "player_radius": (9.0,    1.0,    2.0,   40.0),
+    "k_attract":     TunableSpec(8.0,    0.5,   0.5,  60.0),
+    "k_repel":       TunableSpec(12.0,   0.5,   0.5, 120.0),
+    "force_max":     TunableSpec(4000.0, 100.0, 100.0, 20000.0),
+    "gravity_y":     TunableSpec(900.0,  25.0, -2000.0, 4000.0),
+    "speed_max":     TunableSpec(2000.0, 50.0,  100.0, 8000.0),
+    "player_radius": TunableSpec(9.0,    1.0,    2.0,   40.0),
 }
 
 
 def default_tunables() -> dict[str, float]:
     """A fresh mutable name -> value mapping seeded from TUNABLES defaults."""
-    return {name: spec[0] for name, spec in TUNABLES.items()}
+    return {name: spec.default for name, spec in TUNABLES.items()}
