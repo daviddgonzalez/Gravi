@@ -227,7 +227,7 @@ async def main() -> None:
             neon.draw_player(screen, world.x, world.y, world.player_radius)
 
         if show_hud:
-            hud.draw(screen, tuning, status)
+            hud.draw(screen, tuning, status, fps=clock.get_fps(), steps=steps)
 
         pygame.display.flip()
         await asyncio.sleep(0)  # REQUIRED for pygbag; do not remove

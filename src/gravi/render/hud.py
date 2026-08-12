@@ -26,7 +26,8 @@ def _get_font() -> pygame.font.Font:
     return _font
 
 
-def draw(surface: pygame.Surface, tuning, status: str = "") -> None:
+def draw(surface: pygame.Surface, tuning, status: str = "",
+         fps: float | None = None, steps: int | None = None) -> None:
     font = _get_font()
     x, y = 16, 14
     line_height = 19
@@ -35,6 +36,18 @@ def draw(surface: pygame.Surface, tuning, status: str = "") -> None:
         nonlocal y
         surface.blit(font.render(text, True, color), (x, y))
         y += line_height
+
+    if fps is not None:
+        # `steps` is the diagnostic that matters, not the frame rate itself.
+        # The loop can only afford MAX_STEPS_PER_FRAME physics steps per
+        # frame; once it saturates, the leftover accumulator is discarded and
+        # game time silently falls behind wall-clock time. Saturation, not a
+        # low number, is the thing to react to — so it is called out in red.
+        saturated = steps is not None and steps >= config.MAX_STEPS_PER_FRAME
+        detail = "" if steps is None else f"   sim {steps}/{config.MAX_STEPS_PER_FRAME}"
+        warning = "  SLOW MOTION — sim cannot keep up" if saturated else ""
+        line(f"fps {fps:5.1f}{detail}{warning}",
+             (255, 110, 110) if saturated else config.COLOR_HUD)
 
     line(f"orbit period  {tuning.orbital_period():6.2f} s   "
          f"(2*pi/sqrt(k_attract) — same at any orbit size)")
