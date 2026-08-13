@@ -227,18 +227,67 @@ def test_latch_forms_on_entry_when_the_charge_is_already_held():
     assert w.latched_node() is node
 
 
-def test_latched_repel_never_inverts_into_a_pull():
-    """k_repel*(R - r) goes negative past the rim; that must floor at zero,
-    not turn a push into a pull."""
+def test_a_push_breaks_at_the_rim_where_a_pull_holds():
+    """The two ropes differ deliberately: attract holds past the rim, repel
+    does not. Same room, same launch, same held button — only the charge
+    changes, so this is the whole difference in one test."""
     node = Node(400.0, 400.0, 100.0, 5.0)
-    # Spawn inside the ring, or no rope can form in the first place.
+
+    def fly(charge):
+        # Spawn inside the ring, or no rope can form in the first place.
+        w = make_world(spawn=(400.0, 350.0), nodes=[node], height=1e6)
+        w.vy = -600.0  # heading away, straight out through the top of the ring
+        for _ in range(120):
+            w.step(charge)
+        assert math.hypot(w.x - node.x, w.y - node.y) > node.radius, (
+            "test is meaningless unless the player left the ring")
+        return w
+
+    assert fly(Charge.REPEL).latched_node() is None, "a push must break at the rim"
+    assert fly(Charge.ATTRACT).latched_node() is node, "a pull must hold past it"
+
+
+def test_a_broken_push_never_drags_the_player_back_in():
+    """Belt and braces on the direction of the force. Once the rope is gone
+    there is nothing to invert, but k_repel*(R - r) going negative past the rim
+    was a real bug, so the outcome it produced stays asserted."""
+    node = Node(400.0, 400.0, 100.0, 5.0)
     w = make_world(spawn=(400.0, 350.0), nodes=[node], height=1e6)
-    w.vy = -600.0  # heading away, straight out through the top of the ring
+    w.vy = -600.0
     for _ in range(120):
         w.step(Charge.REPEL)
-    assert w.latched_node() is node
-    assert math.hypot(w.x - node.x, w.y - node.y) > node.radius
-    assert w.vy <= -600.0, "a latched repel must never drag the player back in"
+    assert w.vy <= -600.0, "a push must never turn into a pull"
+
+
+def test_a_broken_push_regrabs_on_re_entry_without_being_released():
+    """Breaking at the rim must not require letting go to use the node again —
+    holding push through an arc that falls back into the ring re-connects."""
+    node = Node(400.0, 400.0, 100.0, 5.0)
+    w = make_world(spawn=(400.0, 350.0), nodes=[node], gravity_y=2000.0,
+                   height=1e6)
+    w.vy = -600.0
+    broke = False
+    for _ in range(240):
+        w.step(Charge.REPEL)
+        if w.dead:
+            break
+        if w.latched_node() is None:
+            broke = True
+        elif broke:
+            return  # re-latched while still holding
+    assert broke, "test is meaningless unless the push broke first"
+    raise AssertionError("the push never re-grabbed on re-entry")
+
+
+def test_a_push_does_not_break_while_still_inside_the_ring():
+    """Only leaving the ring breaks it — a push that fizzles out near the rim
+    while still inside keeps its rope."""
+    node = Node(400.0, 400.0, 250.0, 5.0)
+    w = make_world(spawn=(400.0, 300.0), nodes=[node], height=1e6)
+    for _ in range(60):
+        w.step(Charge.REPEL)
+        assert math.hypot(w.x - node.x, w.y - node.y) <= node.radius
+        assert w.latched_node() is node
 
 
 def test_reset_clears_the_latch():

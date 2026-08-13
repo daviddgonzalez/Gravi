@@ -48,7 +48,7 @@ Attract uses a **linear central force**, not inverse-square:
 ```
 attract:  F = k_a · r          toward center,  clamped to F_max
 repel:    F = k_r · (R − r)    away from center, floored at 0, clamped to F_max
-outside R: F = 0, unless latched (see §2.2.1)
+outside R: F = 0, unless latched by attract (see §2.2.1)
 ```
 
 where `r` is distance from the node center and `R` is the node's influence radius.
@@ -61,19 +61,23 @@ Rationale, in priority order:
 
 Attract and repel are deliberately asymmetric in range profile: **attract is a long-range whip** (strongest at the rim), **repel is a close-range kick** (strongest at contact, fading to nothing at the rim). Two distinct tools from one force system, with no overlap in role.
 
-#### 2.2.1 The rope holds until you let go
+#### 2.2.1 The pull holds until you let go; the push breaks at the rim
 
-*Amended 2026-08-12, after the first slice 1 playtest. Supersedes the original rule that the beam snaps when the player leaves the influence radius.*
+*Amended 2026-08-12, after the first slice 1 playtest: the rope stopped snapping at the influence radius, superseding the original rule. Amended again the same day, after the second: the exemption applies to **attract only**.*
 
-The influence radius decides **where you can grab**, not **how long you can hold**. Once a charge connects to a node, the connection persists until the player releases it, even after they have stretched well outside the ring. Releasing is the only thing that breaks it.
+The two charges rope differently, and the asymmetry is the same one §2.2 already established in the force profiles — a long-range whip and a close-range kick — carried through to how long each one can stay connected.
 
-Consequences, all deliberate:
+**Attract: the ring decides where you can grab, not how long you can hold.** Once a pull connects, it persists until the player releases it, even stretched well outside the ring.
 
 - **The law does not change out there.** Attract stays `F = k_a · r`, so the rope keeps tightening the further it is stretched, until `F_max` caps it. No special case, and the beam-thickness cue stays honest — it still reads force magnitude anywhere on screen.
-- **Repel needs a floor.** Its `k_r · (R − r)` profile goes *negative* past the rim, which would silently invert a push into a pull. It is floored at zero, so a latched repel outside the ring simply does nothing. Repel remains a close-range kick.
-- **No handoff.** Flying into another node's ring while latched does not steal the rope. Swapping anchors costs a deliberate release-and-regrab, which is what makes chaining a rhythm rather than a drift.
 
-The change was made because the original rule broke the connection constantly at exactly the moment the player was committed to a swing. What replaced it: the ring is a target you must enter, and after that the only thing between you and the anchor is your own thumb.
+**Repel: the push breaks the moment the player leaves the ring.** Its `k_r · (R − r)` profile is already zero at the rim, so holding past it is holding nothing — and the player has only one input to spend. Breaking on exit makes the kick self-terminating: it ends exactly when it stops doing anything, which is what a kick should do. The force is still floored at zero for any caller that evaluates it out there (the validator and the trainer share the force function), because a negative magnitude would silently invert a push into a pull.
+
+- **A broken push re-grabs on re-entry, without a release.** The rope is gone, so the ordinary "held charge with no rope grabs the first node in reach" rule applies. Falling back into a ring with push still held reconnects.
+
+**Both: no handoff.** Flying into another node's ring while latched does not steal the rope. Swapping anchors costs a deliberate release-and-regrab, which is what makes chaining a rhythm rather than a drift.
+
+The first change was made because the original rule broke the connection constantly at exactly the moment the player was committed to a swing — a problem specific to the pull, which is the swing. The second narrows it back to just that case: a push held past the rim was inert, and there was never a swing to protect.
 
 ### 2.3 Solid nodes are the entire balance system
 

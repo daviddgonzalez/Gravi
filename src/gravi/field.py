@@ -70,8 +70,13 @@ def charge_force(
     latched onto this node while inside it and has since stretched past the
     rim (see World.step). The law is unchanged out there — attract is still
     F = k*r, so the rope keeps tightening with distance until force_max caps
-    it. Repel is the one that needs a floor: its k*(R - r) profile goes
-    negative past the rim, which would silently invert a push into a pull.
+    it.
+
+    In the game only attract is ever called this way, because a repel rope
+    breaks at the rim. The `max(0.0, ...)` floor below still guards the repel
+    case for any other caller — the validator and the trainer share this
+    function — since k*(R - r) goes negative past the rim and would otherwise
+    silently invert a push into a pull.
     """
     if charge is Charge.NEUTRAL:
         return (0.0, 0.0)

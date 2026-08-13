@@ -87,18 +87,41 @@ class World:
             return None
         return self.room.nodes[self._latch_index]
 
+    def _within(self, node: Node) -> bool:
+        return math.hypot(node.x - self.x, node.y - self.y) <= node.radius
+
     def _update_latch(self, charge: Charge) -> Node | None:
-        """Releasing drops the rope; holding keeps it, even once the player
-        has stretched outside the influence radius. A held charge with no rope
-        yet grabs the first node that comes into reach, so flying into a field
-        with the button already down still connects."""
+        """Releasing always drops the rope. What holding does depends on which
+        rope it is, because the two charges are different tools:
+
+        ATTRACT is a long-range whip, and its rope holds until the player lets
+        go, even once they have stretched well outside the influence radius.
+        The ring says where you can *grab*, not how long you can hold. F = k*r
+        keeps tightening out there, so the hold stays meaningful.
+
+        REPEL is a close-range kick, and its rope breaks the moment the player
+        leaves the ring. Its profile is k*(R - r), which is already zero at the
+        rim: a push that survived past it would be a rope that pushes with no
+        force, holding the player's one input hostage for nothing. Breaking on
+        exit is also what makes the kick self-terminating — it ends exactly
+        when it stops doing anything.
+
+        A held charge with no rope yet grabs the first node that comes into
+        reach, so flying into a field with the button already down still
+        connects — and so a broken push re-grabs on re-entry without needing
+        to be released first.
+        """
         if charge is Charge.NEUTRAL:
             self._latch_index = None
             return None
 
         current = self.latched_node()
         if current is not None:
-            return current
+            if charge is not Charge.REPEL or self._within(current):
+                return current
+            # Pushed itself out of range: drop it and fall through, so an
+            # overlapping ring can pick the push up on the same step.
+            self._latch_index = None
 
         node = self.active_node()
         if node is None:
@@ -116,8 +139,11 @@ class World:
 
         node = self._update_latch(charge)
         if node is not None:
+            # Only attract is allowed to act past the rim; a latched repel is
+            # inside its ring by construction, so the cutoff is a no-op there
+            # and left in place as a guard rather than an exception.
             fx, fy = charge_force(self.x, self.y, node, charge, self.params,
-                                  ignore_radius=True)
+                                  ignore_radius=charge is Charge.ATTRACT)
             ax += fx
             ay += fy
 

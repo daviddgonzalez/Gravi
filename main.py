@@ -222,8 +222,12 @@ async def main() -> None:
             neon.draw_node(screen, node, is_active=node is anchor)
 
         if anchor is not None and charge is not Charge.NEUTRAL and not world.dead:
-            fx, fy = charge_force(world.x, world.y, anchor, charge, world.params,
-                                  ignore_radius=world.latched_node() is not None)
+            # Mirrors World.step exactly, or the beam would draw a force the
+            # simulation is not applying.
+            fx, fy = charge_force(
+                world.x, world.y, anchor, charge, world.params,
+                ignore_radius=(charge is Charge.ATTRACT
+                               and world.latched_node() is not None))
             neon.draw_beam(screen, world.x, world.y, anchor, charge,
                            math.hypot(fx, fy), world.params.force_max)
 
