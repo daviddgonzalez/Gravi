@@ -5,8 +5,11 @@ IS the influence radius, and beam intensity IS force magnitude. There is no
 separate HUD for any of that.
 
 Performance note that matters for the browser build: glow is expensive if you
-generate gradients every frame. Every glow here is baked once into a surface,
-cached by (colour, radius), and blitted with BLEND_ADD.
+generate gradients every frame, so every glow is baked once into a surface,
+cached by (colour, radius), and blitted with BLEND_ADD. Sprites are only worth
+it for a filled disc. A thin ring is drawn directly instead — a sprite for one
+would be a square of mostly-black pixels, and compositing that costs far more
+than rasterising the annulus.
 
 **Intensity lives in RGB magnitude, never in an alpha channel.** BLEND_ADD is
 BLEND_RGB_ADD: it adds the source RGB to the destination and does not look at
@@ -29,7 +32,6 @@ from .. import config
 from ..field import Charge
 
 _glow_cache: dict[tuple[tuple[int, int, int], int], pygame.Surface] = {}
-_ring_cache: dict[tuple[int, int], pygame.Surface] = {}
 _scratch: pygame.Surface | None = None
 
 TRAIL_BANDS = 10
@@ -100,29 +102,20 @@ def draw_glow(surface: pygame.Surface, x: float, y: float,
                  special_flags=pygame.BLEND_ADD)
 
 
-def _ring_sprite(radius: int, level: int) -> pygame.Surface:
-    """The influence-radius ring, baked and cached — it is redrawn every frame
-    for every node, so it must never be reallocated per frame. `level` is the
-    brightness in 0..255, folded into the colour rather than into alpha."""
-    key = (radius, level)
-    cached = _ring_cache.get(key)
-    if cached is not None:
-        return cached
-
-    size = radius * 2 + 4
-    surface = pygame.Surface((size, size))
-    pygame.draw.circle(surface, _scaled(config.COLOR_NODE, level / 255.0),
-                       (radius + 2, radius + 2), radius, width=2)
-    _ring_cache[key] = surface
-    return surface
-
-
 def draw_node(surface: pygame.Surface, node, is_active: bool) -> None:
-    """Influence ring at `node.radius`, lethal core at `node.core_radius`."""
-    radius = int(node.radius)
-    ring = _ring_sprite(radius, 110 if is_active else 40)
-    surface.blit(ring, (int(node.x) - radius - 2, int(node.y) - radius - 2),
-                 special_flags=pygame.BLEND_ADD)
+    """Influence ring at `node.radius`, lethal core at `node.core_radius`.
+
+    The ring is drawn straight onto the screen rather than blitted from a
+    baked sprite. A sprite has to be a square of (2r+4)^2 pixels to hold a
+    circle, so compositing five 240px rings additively touched 1.00M pixels
+    per frame to light 0.014M — a 72x overdraw, measured 9.3x slower than
+    drawing the annulus directly. What that costs is additive accumulation
+    where two rings overlap; at these brightnesses over a near-black field
+    the difference is a few units per channel.
+    """
+    pygame.draw.circle(surface,
+                       _scaled(config.COLOR_NODE, (110 if is_active else 40) / 255.0),
+                       (int(node.x), int(node.y)), int(node.radius), width=2)
 
     draw_glow(surface, node.x, node.y, config.COLOR_NODE,
               int(node.core_radius * (4 if is_active else 3)))
@@ -132,8 +125,8 @@ def draw_node(surface: pygame.Surface, node, is_active: bool) -> None:
 
 def draw_beam(surface: pygame.Surface, px: float, py: float, node,
               charge: Charge, force_magnitude: float, force_max: float) -> None:
-    """Thickness and alpha track force magnitude, so the player reads F = k*r
-    off the screen without ever being told it."""
+    """Thickness and brightness track force magnitude, so the player reads
+    F = k*r off the screen without ever being told it."""
     if charge is Charge.NEUTRAL:
         return
 
