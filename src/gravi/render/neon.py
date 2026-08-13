@@ -32,6 +32,8 @@ _glow_cache: dict[tuple[tuple[int, int, int], int], pygame.Surface] = {}
 _ring_cache: dict[tuple[int, int], pygame.Surface] = {}
 _scratch: pygame.Surface | None = None
 
+TRAIL_BANDS = 10
+
 
 def _scaled(color: tuple[int, int, int], intensity: float) -> tuple[int, int, int]:
     """Fold an intensity in 0..1 into the colour itself.
@@ -43,12 +45,16 @@ def _scaled(color: tuple[int, int, int], intensity: float) -> tuple[int, int, in
     return (int(color[0] * i), int(color[1] * i), int(color[2] * i))
 
 
-def _scratch_layer(size: tuple[int, int]) -> pygame.Surface:
-    """One reusable full-screen layer, cleared per use. Allocating a 1280x720
-    surface twice a frame is the obvious WASM cliff.
+def _scratch_layer(size: tuple[int, int], rect: pygame.Rect) -> pygame.Surface:
+    """One reusable full-screen layer, cleared only across `rect`.
 
     Plain, not SRCALPHA: additive compositing needs no alpha channel, and a
     non-alpha blit is materially cheaper.
+
+    Clearing and compositing the whole 1280x720 surface to draw one beam is
+    ~1.8M pixel operations for a handful of lit pixels, which is the obvious
+    WASM cliff. Only the region actually drawn is touched; anything stale
+    outside `rect` is never composited, so it cannot leak.
 
     Callers MUST blit their result before anyone else calls this — it is a
     single shared buffer, not a pool.
@@ -56,8 +62,17 @@ def _scratch_layer(size: tuple[int, int]) -> pygame.Surface:
     global _scratch
     if _scratch is None or _scratch.get_size() != size:
         _scratch = pygame.Surface(size)
-    _scratch.fill((0, 0, 0))
+    _scratch.fill((0, 0, 0), rect)
     return _scratch
+
+
+def _composite(surface: pygame.Surface, layer: pygame.Surface,
+               rect: pygame.Rect) -> None:
+    """Additively composite just the drawn region."""
+    rect = rect.clip(surface.get_rect())
+    if rect.width <= 0 or rect.height <= 0:
+        return
+    surface.blit(layer, rect.topleft, rect, special_flags=pygame.BLEND_ADD)
 
 
 def _glow_sprite(color: tuple[int, int, int], radius: int) -> pygame.Surface:
@@ -128,9 +143,13 @@ def draw_beam(surface: pygame.Surface, px: float, py: float, node,
     width = max(1, int(1 + strength * 7))
     tint = _scaled(color, (60 + strength * 195) / 255.0)
 
-    layer = _scratch_layer(surface.get_size())
+    pad = width + 2
+    rect = pygame.Rect(int(min(px, node.x)) - pad, int(min(py, node.y)) - pad,
+                       int(abs(node.x - px)) + 2 * pad,
+                       int(abs(node.y - py)) + 2 * pad)
+    layer = _scratch_layer(surface.get_size(), rect)
     pygame.draw.line(layer, tint, (px, py), (node.x, node.y), width)
-    surface.blit(layer, (0, 0), special_flags=pygame.BLEND_ADD)
+    _composite(surface, layer, rect)
 
 
 def draw_player(surface: pygame.Surface, x: float, y: float, radius: float) -> None:
@@ -139,17 +158,40 @@ def draw_player(surface: pygame.Surface, x: float, y: float, radius: float) -> N
 
 
 def draw_trail(surface: pygame.Surface, points) -> None:
-    """Fades from tail to head so orbit shape is legible as a drawn line."""
+    """Fades from tail to head so orbit shape is legible as a drawn line.
+
+    The fade is drawn in TRAIL_BANDS constant-brightness bands rather than
+    per segment. One `draw.line` per segment means one Python-level call per
+    segment every frame, and that loop was the single most expensive thing in
+    the frame; `draw.lines` takes the whole band in one call. Banding is
+    invisible at these alphas — consecutive segments differ by under two
+    levels out of 255.
+    """
     points = tuple(points)
-    if len(points) < 2:
-        return
-    layer = _scratch_layer(surface.get_size())
     total = len(points)
-    for index in range(1, total):
-        t = index / total
-        pygame.draw.line(layer, _scaled(config.COLOR_TRAIL, (8 + 120 * t * t) / 255.0),
-                         points[index - 1], points[index], 2)
-    surface.blit(layer, (0, 0), special_flags=pygame.BLEND_ADD)
+    if total < 2:
+        return
+
+    pad = 3
+    left = min(p[0] for p in points)
+    right = max(p[0] for p in points)
+    top = min(p[1] for p in points)
+    bottom = max(p[1] for p in points)
+    rect = pygame.Rect(int(left) - pad, int(top) - pad,
+                       int(right - left) + 2 * pad, int(bottom - top) + 2 * pad)
+
+    layer = _scratch_layer(surface.get_size(), rect)
+    for band in range(TRAIL_BANDS):
+        low = band * (total - 1) // TRAIL_BANDS
+        high = (band + 1) * (total - 1) // TRAIL_BANDS
+        segment = points[low:high + 1]  # +1 so consecutive bands join up
+        if len(segment) < 2:
+            continue
+        t = (band + 0.5) / TRAIL_BANDS
+        pygame.draw.lines(layer, _scaled(config.COLOR_TRAIL,
+                                         (8 + 120 * t * t) / 255.0),
+                          False, segment, 2)
+    _composite(surface, layer, rect)
 
 
 def force_magnitude(fx: float, fy: float) -> float:

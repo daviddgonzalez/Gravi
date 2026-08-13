@@ -17,6 +17,9 @@ HELP_LINES = (
 )
 
 
+_text_cache: dict[tuple[str, tuple[int, int, int]], pygame.Surface] = {}
+
+
 def _get_font() -> pygame.font.Font:
     """`Font(None, ...)` uses pygame's bundled font. SysFont is avoided
     deliberately: the browser build has no system font directory to search."""
@@ -26,15 +29,31 @@ def _get_font() -> pygame.font.Font:
     return _font
 
 
+def _text(text: str, color: tuple[int, int, int]) -> pygame.Surface:
+    """Rasterised text, cached. `font.render` allocates a fresh surface every
+    call, and the overlay draws a dozen-plus lines every frame while most of
+    them change only when a value is edited."""
+    key = (text, color)
+    surface = _text_cache.get(key)
+    if surface is None:
+        surface = _get_font().render(text, True, color)
+        if len(_text_cache) > 512:
+            # Values change as they are swept, so this is unbounded in
+            # principle. Dropping the whole cache is fine; it refills in a
+            # frame.
+            _text_cache.clear()
+        _text_cache[key] = surface
+    return surface
+
+
 def draw(surface: pygame.Surface, tuning, status: str = "",
          fps: float | None = None, steps: int | None = None) -> None:
-    font = _get_font()
     x, y = 16, 14
     line_height = 19
 
     def line(text: str, color=config.COLOR_HUD) -> None:
         nonlocal y
-        surface.blit(font.render(text, True, color), (x, y))
+        surface.blit(_text(text, color), (x, y))
         y += line_height
 
     if fps is not None:

@@ -27,8 +27,12 @@ COLOR_BEAM_REPEL = (255, 120, 200)
 COLOR_TRAIL = (120, 180, 255)
 COLOR_HUD = (200, 220, 235)
 
-# Trail
-TRAIL_MAX_POINTS = 900  # ~15 s at 60 fps
+# Trail. Sampled every Nth physics step, not every step: at 240 Hz and 600
+# px/s the player advances 2.5px per step, so sampling every step buys four
+# points per barely-visible segment and costs four times the draw work. The
+# render cost is per segment, and it is the single largest item in the frame.
+TRAIL_SAMPLE_EVERY = 4
+TRAIL_MAX_POINTS = 225  # ~3.75 s of trail at 240 Hz sampled every 4th step
 
 
 class TunableSpec(NamedTuple):

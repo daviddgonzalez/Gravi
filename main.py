@@ -88,6 +88,7 @@ async def main() -> None:
 
     accumulator = 0.0
     dead_timer = 0.0
+    trail_sample = 0
     running = True
 
     while running:
@@ -188,7 +189,10 @@ async def main() -> None:
             accumulator -= world.dt
             steps += 1
             if not world.dead:
-                trail.add(world.x, world.y)
+                trail_sample += 1
+                if trail_sample >= config.TRAIL_SAMPLE_EVERY:
+                    trail_sample = 0
+                    trail.add(world.x, world.y)
         if steps == config.MAX_STEPS_PER_FRAME:
             accumulator = 0.0
 
