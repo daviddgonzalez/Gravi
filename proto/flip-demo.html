@@ -352,23 +352,27 @@
   // Node field. Deliberately asymmetric: a rotationally symmetric layout
   // would look identical after a quarter turn, which would hide exactly the
   // disorientation criterion 1 is trying to measure.
-  // Kept inside a ~280 px envelope so the 280..360 band stays clear of node
-  // fields. Arrows live in that band, which is what makes them the "far side"
-  // of the arena (spec 3.1) rather than something you clip mid-orbit.
+  // Influence rings deliberately reach PAST the arrow ring. An earlier layout
+  // held them inside a 280 px envelope so arrows would sit on a clear "far
+  // side" (spec 3.1) — which meant arriving at an arrow left you with nothing
+  // in reach and no way to recover. Coverage at the arrow beats tidiness.
   const NODES = [
-    { x: -110, y: -70,  r: 120, core: 15 },
-    { x:   45, y: -130, r: 110, core: 13 },
-    { x:  140, y:   30, r: 120, core: 16 },
-    { x:  -30, y:   85, r: 100, core: 13 },
-    { x: -145, y:  120, r:  95, core: 12 },
+    { x: -110, y: -70,  r: 200, core: 15 },
+    { x:   45, y: -130, r: 185, core: 13 },
+    { x:  140, y:   30, r: 200, core: 16 },
+    { x:  -30, y:  160, r: 185, core: 13 },
+    { x: -145, y:  120, r: 165, core: 12 },
   ].map(n => ({ x: CX + n.x, y: CY + n.y, r: n.r, core: n.core }));
 
   // Four arrows just inside the rim. Each SETS gravity to its own direction
   // (idempotent), and each points a quarter turn on from the rim it sits on,
   // so crossing them in sequence circulates the arena forever.
-  // Bar sits at 0.85R and spans the FULL chord there, so there is no gap at
-  // its ends to slip through by accident: a miss is a miss you can see.
-  const ARROW_AT = 0.85 * ARENA;
+  // Bar spans the FULL chord at its radius, so there is no gap at its ends to
+  // slip through by accident: a miss is a miss you can see. Pulling the radius
+  // in from 0.85R to 0.75R widens the bar from 380 px to 476 px — the chord
+  // grows as you move toward the centre, so "closer in" and "bigger target"
+  // are the same knob.
+  const ARROW_AT = 0.75 * ARENA;
   const ARROW_HALF = Math.sqrt(ARENA * ARENA - ARROW_AT * ARROW_AT);
   const ARROWS = [
     { d: [ 0,  1] },
