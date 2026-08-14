@@ -323,8 +323,14 @@ Beyond the existing 63 tests, which must keep passing:
 
 - **Flip duration.** §3.3 says roughly 0.2 s. Both prototypes expose it as a
   slider precisely because it is the knob criterion 2 will be judged on.
-- **Chamber dimensions.** Depth 1150 and half-width 460 come from the
-  prototype and have not been tuned against the tuned speeds.
+- **Chamber dimensions.** Half-width 460 comes from the prototype and has not
+  been tuned. **Depth is the flip-frequency knob** — it sets how long a player
+  spends between arrows at identical physics, so it is how the shipped game
+  slows down or speeds up. The prototype's first value of 1150 produced ~26
+  gravity swaps per minute, which playtested as too hard to read; 1600 gives
+  ~8. The prototype exposes it as a slider alongside a wall-clock `pace`
+  control, which exists only to separate "the tempo is wrong" from "the
+  mechanic is wrong" and is not a shippable knob.
 - **Respawn point.** The prototype respawns at the current chamber's entrance
   rather than the start of the run, to keep a feel test flowing. What the real
   game does is a slice 3 question.

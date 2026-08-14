@@ -131,8 +131,16 @@
       </div>
     </div>
     <div class="cell">
-      <span class="eyebrow">Flip ease · <span class="val" id="easeVal">200 ms</span></span>
-      <input type="range" id="ease" min="0" max="500" step="10" value="200" aria-label="Flip ease duration">
+      <span class="eyebrow">Pace · <span class="val" id="paceVal">0.60×</span></span>
+      <input type="range" id="pace" min="0.3" max="1" step="0.05" value="0.6" aria-label="Time scale">
+    </div>
+    <div class="cell">
+      <span class="eyebrow">Chamber depth · <span class="val" id="depthVal">1600</span></span>
+      <input type="range" id="depth" min="900" max="2600" step="100" value="1600" aria-label="Chamber depth">
+    </div>
+    <div class="cell">
+      <span class="eyebrow">Flip ease · <span class="val" id="easeVal">300 ms</span></span>
+      <input type="range" id="ease" min="0" max="800" step="20" value="300" aria-label="Flip ease duration">
     </div>
     <div class="cell">
       <span class="eyebrow">Terrain</span>
@@ -155,6 +163,7 @@
     <div><span class="eyebrow">chambers</span><span class="n" id="tCh">0</span></div>
     <div><span class="eyebrow">best</span><span class="n" id="tBest">0</span></div>
     <div><span class="eyebrow">distance</span><span class="n" id="tDist">0</span></div>
+    <div><span class="eyebrow">swaps / min</span><span class="n" id="tRate">—</span></div>
     <div><span class="eyebrow">gravity</span><span class="n" id="tGrav">▼</span></div>
     <div><span class="eyebrow">seed</span><span class="n" id="tSeed">—</span></div>
   </div>
@@ -181,6 +190,15 @@
     width, so you cross one nearly every time — “missing” means crossing badly, not sailing
     past a small bar. Death is core contact or leaving the chamber sideways; there are no walls
     to hit. Chambers stream in ahead of you and are generated from the seed shown above.
+  </p>
+  <p class="note">
+    <strong>Two ways to slow it down, and they are not the same.</strong>
+    <em>Chamber depth</em> is the real one — deeper chambers mean fewer gravity swaps per
+    minute at identical physics, and it is a knob the shipped game can actually have.
+    <em>Pace</em> is a demo aid: it scales wall-clock time only, so nothing tuned changes
+    and the whole run just plays out over more seconds. Use pace to find out whether
+    tempo is the problem; use depth to fix it. If it only reads well below 1.00×, the
+    answer for the real game is deeper chambers or lower gravity, not slow motion.
   </p>
   <p class="note">
     <strong>Still a throwaway:</strong> JavaScript, so it can be iterated in seconds.
@@ -215,7 +233,10 @@
   // HALF_W is set so the chamber is a little wider than the screen is tall,
   // which is what makes an arrow spanning it a target you cross rather than
   // one you aim at.
-  const DEPTH   = 1150;
+  // DEPTH sets how long you spend in a chamber, so it IS the flip frequency:
+  // deeper chambers mean fewer gravity swaps per minute at identical physics.
+  // This is the shippable way to slow the game down.
+  let   DEPTH   = 1600;
   const HALF_W  = 460;
   const SIDE_OUT = 90;           // grace past the chamber's side before death
   const KEEP    = 3;             // chambers retained behind the player
@@ -254,7 +275,7 @@
   function makeChamber(rng, entry, dir, index) {
     const p = perp(dir);
     const nodes = [];
-    const count = 3 + Math.floor(rng() * 2);          // 3 or 4
+    const count = Math.max(3, Math.round(DEPTH / 420)) + Math.floor(rng() * 2);
     let guard = 0;
     while (nodes.length < count && guard++ < 200) {
       // Bias nodes away from the entrance so there is room to read the field.
@@ -289,8 +310,14 @@
     // Defaults to the FIXED camera: screen-up never moves, so there is a
     // stable reference to judge the rotating mode against. Toggle to compare.
     rotating: false,
+    // Wall-clock time scale. Feeds only the accumulator, so no tuned constant
+    // changes and no physics relationship changes — the whole run, flips and
+    // eases included, just plays out over more seconds. A demo aid, not a
+    // shippable knob: if the game only reads well below 1.0, the real answer
+    // is deeper chambers or lower gravity, not slow motion.
+    pace: 0.6,
     outlines: true,
-    easeMs: 200,
+    easeMs: 300,
 
     chambers: [],
     at: 0,                 // index of the chamber the player is inside
@@ -674,11 +701,23 @@
   $("ease").addEventListener("input", e => {
     state.easeMs = +e.target.value; $("easeVal").textContent = `${state.easeMs} ms`;
   });
+  $("pace").addEventListener("input", e => {
+    state.pace = +e.target.value;
+    $("paceVal").textContent = `${state.pace.toFixed(2)}×`;
+  });
+  $("depth").addEventListener("input", e => {
+    DEPTH = +e.target.value;
+    $("depthVal").textContent = String(DEPTH);
+    // Chambers bake their exit plane in at creation, so the whole chain has
+    // to be rebuilt rather than resized underneath the player.
+    generate(state.seed); respawn(true);
+  });
   $("reseed").addEventListener("click", () => { generate((state.seed + 1) | 0); respawn(true); });
   $("reset").addEventListener("click", () => respawn(true));
 
-  const tFps = $("tFps"), tCh = $("tCh"), tBest = $("tBest"),
-        tDist = $("tDist"), tGrav = $("tGrav"), tSeed = $("tSeed");
+  const tFps = $("tFps"), tCh = $("tCh"), tBest = $("tBest"), tDist = $("tDist"),
+        tGrav = $("tGrav"), tSeed = $("tSeed"), tRate = $("tRate");
+  let wall = 0, swaps = 0, lastAt = 0;
   const GLYPH = ["▼", "◀", "▲", "▶"];
   let frames = 0, fpsAcc = 0, fpsShown = 0, last = 0, acc = 0;
 
@@ -689,7 +728,7 @@
     last = now;
 
     state.charge = charge();
-    acc += dt;
+    acc += dt * state.pace;
     let steps = 0;
     while (acc >= DT && steps < MAX_STEPS) {
       step(state.charge);
@@ -717,6 +756,14 @@
     tDist.textContent = (state.distance / 1000).toFixed(1) + "k";
     tGrav.textContent = GLYPH[(((Math.round(state.phiTo / HALF_PI) % 4) + 4) % 4)];
     tSeed.textContent = state.seed;
+
+    // Measured in WALL-CLOCK seconds, not sim seconds — the whole point of
+    // the pace control is that those are no longer the same thing, and what
+    // makes a player queasy is swaps per real minute.
+    wall += dt;
+    if (state.at > lastAt) swaps += state.at - lastAt;
+    lastAt = state.at;
+    tRate.textContent = wall > 4 ? (swaps / (wall / 60)).toFixed(1) : "—";
   }
 
   generate(1);
