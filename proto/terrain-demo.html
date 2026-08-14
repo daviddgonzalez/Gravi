@@ -1,0 +1,696 @@
+<title>Gravi Chamber Run</title>
+<style>
+  :root {
+    --ground:      #05060b;
+    --panel:       #0b0f17;
+    --panel-hi:    #121926;
+    --edge:        #1b2532;
+    --edge-hi:     #2b3a4d;
+    --ink:         #c8dceb;
+    --ink-dim:     #6f8296;
+    --ink-faint:   #46566a;
+    --node:        #50f0ff;
+    --player:      #fff078;
+    --repel:       #ff78c8;
+    --arrow:       #a97bff;
+    --bad:         #ff6e6e;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  /* Single committed theme: an instrument reading of a near-black neon game.
+     Every colour is painted explicitly; nothing is inherited from the host. */
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap { max-width: 1160px; margin: 0 auto; padding: 28px 20px 64px;
+          display: flex; flex-direction: column; gap: 20px; }
+
+  header { display: flex; flex-direction: column; gap: 6px; }
+  h1 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: -0.01em; text-wrap: balance; }
+  .sub { margin: 0; font-family: var(--sans); font-size: 14px; line-height: 1.55;
+         color: var(--ink-dim); max-width: 66ch; }
+  .eyebrow { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); }
+
+  .stage { position: relative; background: #000; border: 1px solid var(--edge);
+           border-radius: 3px; overflow: hidden; line-height: 0; }
+  canvas { display: block; width: 100%; height: auto; touch-action: none; }
+
+  .rail { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          gap: 1px; background: var(--edge); border: 1px solid var(--edge);
+          border-radius: 3px; overflow: hidden; }
+  .cell { background: var(--panel); padding: 12px 14px; display: flex;
+          flex-direction: column; gap: 9px; min-width: 0; }
+
+  .seg { display: flex; gap: 1px; background: var(--edge); border-radius: 2px; overflow: hidden; }
+  .seg button { flex: 1; appearance: none; border: 0; background: var(--panel-hi);
+                color: var(--ink-dim); font-family: var(--mono); font-size: 12px;
+                letter-spacing: 0.03em; padding: 7px 4px; cursor: pointer;
+                transition: background 100ms linear, color 100ms linear; }
+  .seg button:hover { color: var(--ink); background: var(--edge-hi); }
+  .seg button[aria-pressed="true"] { background: var(--node); color: #04222a; font-weight: 600; }
+  .seg button:focus-visible { outline: 2px solid var(--player); outline-offset: -2px; }
+
+  .act { appearance: none; border: 1px solid var(--edge-hi); background: var(--panel-hi);
+         color: var(--ink); font-family: var(--mono); font-size: 12px; letter-spacing: 0.03em;
+         padding: 7px 10px; border-radius: 2px; cursor: pointer;
+         transition: background 100ms linear, border-color 100ms linear; }
+  .act:hover { background: var(--edge-hi); border-color: var(--ink-faint); }
+  .act:focus-visible { outline: 2px solid var(--player); outline-offset: 1px; }
+
+  input[type="range"] { width: 100%; accent-color: var(--node); cursor: pointer; margin: 0; }
+  input[type="range"]:focus-visible { outline: 2px solid var(--player); outline-offset: 3px; }
+  .val { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .tele { display: grid; grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+          gap: 1px; background: var(--edge); border: 1px solid var(--edge);
+          border-radius: 3px; overflow: hidden; }
+  .tele div { background: var(--panel); padding: 10px 12px; display: flex;
+              flex-direction: column; gap: 3px; }
+  .tele .n { font-size: 17px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+
+  .crit { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+  .crit article { border-left: 2px solid var(--edge-hi); padding-left: 12px;
+                  display: flex; flex-direction: column; gap: 4px; }
+  .crit h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink); }
+  .crit p { margin: 0; font-family: var(--sans); font-size: 13px; line-height: 1.5; color: var(--ink-dim); }
+
+  .keys { color: var(--ink-faint); font-size: 11.5px; letter-spacing: 0.02em; }
+  kbd { font-family: var(--mono); font-size: 11px; background: var(--panel-hi);
+        border: 1px solid var(--edge-hi); border-bottom-width: 2px; border-radius: 2px;
+        padding: 1px 5px; color: var(--ink); }
+
+  .note { font-family: var(--sans); font-size: 13px; line-height: 1.55;
+          color: var(--ink-dim); max-width: 72ch; margin: 0; }
+  .note strong { color: var(--ink); font-weight: 600; }
+  hr { border: 0; border-top: 1px solid var(--edge); margin: 4px 0; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition-duration: 0ms !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Gravi · slice 2 · terrain prototype</span>
+    <h1>What a chamber run actually looks like</h1>
+    <p class="sub">
+      No arena and no walls. A generated chain of chambers, each with a node field and
+      a violet exit arrow spanning its whole far side — so you don’t aim at the arrow,
+      you aim at <em>where on it</em> you cross. The camera follows and turns so gravity
+      stays screen&#8209;down.
+    </p>
+  </header>
+
+  <div class="stage">
+    <canvas id="c" width="1280" height="720" aria-label="Gravi chamber run playfield"></canvas>
+  </div>
+
+  <div class="rail">
+    <div class="cell">
+      <span class="eyebrow">Camera</span>
+      <div class="seg" role="group" aria-label="Camera mode">
+        <button type="button" id="camRot" aria-pressed="true">Rotating</button>
+        <button type="button" id="camFix" aria-pressed="false">Fixed</button>
+      </div>
+    </div>
+    <div class="cell">
+      <span class="eyebrow">Chamber outlines</span>
+      <div class="seg" role="group" aria-label="Show chamber outlines">
+        <button type="button" id="outOn" aria-pressed="true">Shown</button>
+        <button type="button" id="outOff" aria-pressed="false">Hidden</button>
+      </div>
+    </div>
+    <div class="cell">
+      <span class="eyebrow">Flip ease · <span class="val" id="easeVal">200 ms</span></span>
+      <input type="range" id="ease" min="0" max="500" step="10" value="200" aria-label="Flip ease duration">
+    </div>
+    <div class="cell">
+      <span class="eyebrow">Terrain</span>
+      <button type="button" class="act" id="reseed">New run &nbsp;<kbd>N</kbd></button>
+    </div>
+    <div class="cell">
+      <span class="eyebrow">Run</span>
+      <button type="button" class="act" id="reset">Restart &nbsp;<kbd>R</kbd></button>
+    </div>
+  </div>
+
+  <p class="keys">
+    <kbd>J</kbd> or <kbd>left&nbsp;mouse</kbd> attract &nbsp;·&nbsp;
+    <kbd>K</kbd> or <kbd>right&nbsp;mouse</kbd> repel &nbsp;·&nbsp;
+    <kbd>R</kbd> restart &nbsp;·&nbsp; <kbd>N</kbd> new terrain
+  </p>
+
+  <div class="tele">
+    <div><span class="eyebrow">fps</span><span class="n" id="tFps">—</span></div>
+    <div><span class="eyebrow">chambers</span><span class="n" id="tCh">0</span></div>
+    <div><span class="eyebrow">best</span><span class="n" id="tBest">0</span></div>
+    <div><span class="eyebrow">distance</span><span class="n" id="tDist">0</span></div>
+    <div><span class="eyebrow">gravity</span><span class="n" id="tGrav">▼</span></div>
+    <div><span class="eyebrow">seed</span><span class="n" id="tSeed">—</span></div>
+  </div>
+
+  <hr>
+
+  <div class="crit">
+    <article>
+      <h2>1 · No re-orientation beat</h2>
+      <p>Crossing into a new chamber, can you read the node field and commit — or is there a beat of “wait, where am I”?</p>
+    </article>
+    <article>
+      <h2>2 · Comfortable at rate</h2>
+      <p>Run a few minutes. Try the ease at 0&nbsp;ms and 500&nbsp;ms. Does the turning stay comfortable?</p>
+    </article>
+    <article>
+      <h2>3 · A bad crossing is your fault</h2>
+      <p>Cross the arrow near an edge and the next chamber starts ugly. Does that read as your mistake, or as the terrain’s?</p>
+    </article>
+  </div>
+
+  <p class="note">
+    <strong>What changed from the arena demo:</strong> the arrow now spans the chamber’s full
+    width, so you cross one nearly every time — “missing” means crossing badly, not sailing
+    past a small bar. Death is core contact or leaving the chamber sideways; there are no walls
+    to hit. Chambers stream in ahead of you and are generated from the seed shown above.
+  </p>
+  <p class="note">
+    <strong>Still a throwaway:</strong> JavaScript, so it can be iterated in seconds.
+    The force law, the integrator and the slice&nbsp;1 tuned values are ported faithfully;
+    the real work is Python and none of this ships.
+  </p>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------------------------------------------------------------- constants
+  // Ported verbatim from src/gravi/config.py (slice 1 playtest values).
+  const DT            = 1 / 240;
+  const MAX_STEPS     = 12;
+  const K_ATTRACT     = 15.0;
+  const K_REPEL       = 15.0;
+  const FORCE_MAX     = 4500.0;
+  const GRAVITY       = 500.0;
+  const SPEED_MAX     = 600.0;   // perpendicular to gravity ("carry")
+  const FALL_MAX      = 600.0;   // along gravity
+  const PLAYER_RADIUS = 7.0;
+  const TRAIL_EVERY   = 4;
+  const TRAIL_MAX     = 320;
+  const RESPAWN       = 0.6;
+
+  const W = 1280, H = 720;
+  const HALF_PI = Math.PI / 2;
+
+  // Chamber geometry. DEPTH is along gravity, HALF_W perpendicular to it.
+  // HALF_W is set so the chamber is a little wider than the screen is tall,
+  // which is what makes an arrow spanning it a target you cross rather than
+  // one you aim at.
+  const DEPTH   = 1150;
+  const HALF_W  = 460;
+  const SIDE_OUT = 90;           // grace past the chamber's side before death
+  const KEEP    = 3;             // chambers retained behind the player
+
+  // Player sits above centre so more of the fall is visible.
+  const EYE_X = W / 2, EYE_Y = H * 0.38;
+
+  // ------------------------------------------------------------------ helpers
+  const rot = (v, a) => {
+    const c = Math.cos(a), s = Math.sin(a);
+    return [v[0] * c - v[1] * s, v[0] * s + v[1] * c];
+  };
+  const perp = d => [-d[1], d[0]];
+  const gdir = phi => [Math.sin(phi), Math.cos(phi)];
+  const angleOf = d => Math.atan2(d[0], d[1]);
+
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ------------------------------------------------------------- terrain gen
+  // A chamber is an axis-aligned box in ITS OWN frame: origin at the entrance
+  // line's centre, +d into the chamber, +perp(d) across it. Chambers chain by
+  // placing the next entrance at the previous exit.
+  function makeChamber(rng, entry, dir, index) {
+    const p = perp(dir);
+    const nodes = [];
+    const count = 3 + Math.floor(rng() * 2);          // 3 or 4
+    let guard = 0;
+    while (nodes.length < count && guard++ < 200) {
+      // Bias nodes away from the entrance so there is room to read the field.
+      const t = 220 + rng() * (DEPTH - 420);
+      // Cores stay off the centre lane, because a 90-degree turn maps "where
+      // you crossed the arrow" onto entry DEPTH, not entry offset — every
+      // chamber is entered at u = 0. A core on the axis is an unavoidable
+      // death for a player who does nothing. The influence rings still reach
+      // across the lane, so there is always something to grab from it.
+      const LANE = 110;
+      const u = (rng() < 0.5 ? -1 : 1) * (LANE + rng() * (HALF_W - 130 - LANE));
+      const x = entry[0] + dir[0] * t + p[0] * u;
+      const y = entry[1] + dir[1] * t + p[1] * u;
+      const r = 190 + rng() * 90;
+      const core = 12 + rng() * 8;
+      // Keep cores apart so the run is not a minefield of unavoidable deaths.
+      if (nodes.some(n => Math.hypot(n.x - x, n.y - y) < 260)) continue;
+      nodes.push({ x, y, r, core });
+    }
+
+    // The exit arrow spans the FULL width of the chamber's far side.
+    const turn = rng() < 0.5 ? HALF_PI : -HALF_PI;
+    const next = rot(dir, turn);
+    const exitC = [entry[0] + dir[0] * DEPTH, entry[1] + dir[1] * DEPTH];
+
+    return { index, entry, dir, p, nodes, exitC, next, turn };
+  }
+
+  // ------------------------------------------------------------------- state
+  const state = {
+    seed: 1,
+    rotating: true,
+    outlines: true,
+    easeMs: 200,
+
+    chambers: [],
+    at: 0,                 // index of the chamber the player is inside
+    cleared: 0, best: 0,
+    distance: 0,
+
+    x: 0, y: 0, vx: 0, vy: 0,
+    dead: false, deadTimer: 0,
+    latch: null,           // {c, i} chamber index + node index
+    trail: [], trailTick: 0,
+
+    phi: 0, phiFrom: 0, phiTo: 0, phiT: 1,
+    charge: 0,
+  };
+
+  function generate(seed) {
+    const rng = mulberry32(seed);
+    state.seed = seed;
+    state.chambers = [];
+    let entry = [0, 0], dir = [0, 1];
+    for (let i = 0; i < 6; i++) {
+      const ch = makeChamber(rng, entry, dir, i);
+      state.chambers.push(ch);
+      entry = ch.exitC;
+      dir = ch.next;
+    }
+    state.rng = rng;
+  }
+
+  function extend() {
+    while (state.chambers.length < state.at + 4) {
+      const last = state.chambers[state.chambers.length - 1];
+      state.chambers.push(makeChamber(state.rng, last.exitC, last.next, last.index + 1));
+    }
+  }
+
+  function respawn(toStart) {
+    if (toStart) { state.at = 0; state.cleared = 0; state.distance = 0; }
+    const ch = state.chambers[state.at];
+    state.x = ch.entry[0] + ch.dir[0] * 60;
+    state.y = ch.entry[1] + ch.dir[1] * 60;
+    state.vx = 0; state.vy = 0;
+    state.dead = false; state.deadTimer = 0; state.latch = null;
+    state.trail.length = 0;
+    const a = angleOf(ch.dir);
+    state.phi = a; state.phiFrom = a; state.phiTo = a; state.phiT = 1;
+  }
+
+  // ------------------------------------------------------------------ physics
+  const easeInOut = t => (t <= 0 ? 0 : t >= 1 ? 1 : 0.5 - 0.5 * Math.cos(Math.PI * t));
+  const currentPhi = () =>
+    state.phiFrom + (state.phiTo - state.phiFrom) * easeInOut(state.phiT);
+
+  function flipBy(delta) {
+    state.phiFrom = state.phi;
+    state.phiTo = state.phiTo + delta;
+    state.phiT = state.easeMs <= 0 ? 1 : 0;
+  }
+
+  function chargeForce(px, py, node, charge, ignoreRadius) {
+    const dx = node.x - px, dy = node.y - py;
+    const r = Math.hypot(dx, dy);
+    if (r < 1e-9 || (r > node.r && !ignoreRadius)) return [0, 0];
+    let mag, sign;
+    if (charge > 0) { mag = K_ATTRACT * r;          sign =  1; }
+    else            { mag = K_REPEL * (node.r - r); sign = -1; }
+    mag = Math.min(Math.max(0, mag), FORCE_MAX);
+    return [sign * mag * (dx / r), sign * mag * (dy / r)];
+  }
+
+  function nearbyNodes() {
+    const out = [];
+    for (let c = Math.max(0, state.at - 1); c <= state.at + 1; c++) {
+      const ch = state.chambers[c];
+      if (!ch) continue;
+      for (let i = 0; i < ch.nodes.length; i++) out.push({ c, i, n: ch.nodes[i] });
+    }
+    return out;
+  }
+
+  function activeNode() {
+    let best = null, bestD = Infinity;
+    for (const cand of nearbyNodes()) {
+      const d = Math.hypot(cand.n.x - state.x, cand.n.y - state.y);
+      if (d <= cand.n.r && d < bestD) { best = cand; bestD = d; }
+    }
+    return best;
+  }
+
+  function latchedNode() {
+    if (!state.latch) return null;
+    const ch = state.chambers[state.latch.c];
+    return ch ? ch.nodes[state.latch.i] : null;
+  }
+
+  function updateLatch(charge) {
+    if (charge === 0) { state.latch = null; return null; }
+    const cur = latchedNode();
+    if (cur) {
+      const inside = Math.hypot(cur.x - state.x, cur.y - state.y) <= cur.r;
+      if (charge > 0 || inside) return cur;   // attract holds past the rim
+      state.latch = null;
+    }
+    const found = activeNode();
+    if (!found) return null;
+    state.latch = { c: found.c, i: found.i };
+    return found.n;
+  }
+
+  // Where the player is inside its chamber: t along gravity, u across.
+  function localCoords(ch, x, y) {
+    const dx = x - ch.entry[0], dy = y - ch.entry[1];
+    return [dx * ch.dir[0] + dy * ch.dir[1], dx * ch.p[0] + dy * ch.p[1]];
+  }
+
+  function step(charge) {
+    if (state.phiT < 1) {
+      state.phiT = state.easeMs <= 0 ? 1 : Math.min(1, state.phiT + (DT * 1000) / state.easeMs);
+    }
+    state.phi = currentPhi();
+    if (state.dead) return;
+
+    const [gx, gy] = gdir(state.phi);
+    let ax = gx * GRAVITY, ay = gy * GRAVITY;
+
+    const node = updateLatch(charge);
+    if (node) {
+      const [fx, fy] = chargeForce(state.x, state.y, node, charge, charge > 0);
+      ax += fx; ay += fy;
+    }
+
+    state.vx += ax * DT;
+    state.vy += ay * DT;
+
+    // Per-axis clamp in gravity-relative axes: "fall" along gravity, "carry"
+    // perpendicular. At phi = 0 this is exactly the slice 1 vx/vy split.
+    const px = gy, py = -gx;
+    let fall  = state.vx * gx + state.vy * gy;
+    let carry = state.vx * px + state.vy * py;
+    if (fall > FALL_MAX) fall = FALL_MAX;
+    if (Math.abs(carry) > SPEED_MAX) carry = Math.sign(carry) * SPEED_MAX;
+    state.vx = fall * gx + carry * px;
+    state.vy = fall * gy + carry * py;
+
+    const nx = state.x + state.vx * DT;
+    const ny = state.y + state.vy * DT;
+    state.distance += Math.hypot(nx - state.x, ny - state.y);
+    state.x = nx; state.y = ny;
+
+    const ch = state.chambers[state.at];
+    const [t, u] = localCoords(ch, state.x, state.y);
+
+    // Crossed the exit plane: the arrow spans the whole far side, so this is
+    // the normal way out. Where on it you crossed becomes your entry state.
+    if (t >= DEPTH) {
+      if (Math.abs(u) > HALF_W) { kill(); return; }  // past the side, not the arrow
+      // rot(d, a) carries a direction at angle phi to phi - a, so the camera
+      // turns by the NEGATIVE of the geometric turn. Getting this backwards
+      // spins the world the wrong way on every flip.
+      flipBy(-ch.turn);
+      state.at++;
+      state.cleared++;
+      if (state.cleared > state.best) state.best = state.cleared;
+      extend();
+    } else if (Math.abs(u) > HALF_W + SIDE_OUT) {
+      kill();                       // left the chamber sideways
+      return;
+    } else if (t < -600) {
+      kill();                       // thrown back out of the entrance
+      return;
+    }
+
+    for (const cand of nearbyNodes()) {
+      if (Math.hypot(cand.n.x - state.x, cand.n.y - state.y) <= cand.n.core + PLAYER_RADIUS) {
+        kill(); return;
+      }
+    }
+  }
+
+  function kill() { state.dead = true; state.deadTimer = 0; }
+
+  // ----------------------------------------------------------------- renderer
+  const cv = document.getElementById("c");
+  const ctx = cv.getContext("2d", { alpha: false });
+
+  let ca = 1, sa = 0, ox = 0, oy = 0;
+  function setCamera() {
+    const a = state.rotating ? state.phi : 0;
+    ca = Math.cos(a); sa = Math.sin(a);
+    ox = state.x; oy = state.y;
+  }
+  const sx = (x, y) => EYE_X + (x - ox) * ca - (y - oy) * sa;
+  const sy = (x, y) => EYE_Y + (x - ox) * sa + (y - oy) * ca;
+
+  function glow(x, y, radius, rgb, peak) {
+    if (x < -radius || x > W + radius || y < -radius || y > H + radius) return;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    g.addColorStop(0,    `rgba(${rgb},${peak})`);
+    g.addColorStop(0.45, `rgba(${rgb},${peak * 0.22})`);
+    g.addColorStop(1,    `rgba(${rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, radius, 0, 6.28318530718); ctx.fill();
+  }
+
+  function chamberCorners(ch) {
+    const pts = [[0, -HALF_W], [DEPTH, -HALF_W], [DEPTH, HALF_W], [0, HALF_W]];
+    return pts.map(([t, u]) => {
+      const x = ch.entry[0] + ch.dir[0] * t + ch.p[0] * u;
+      const y = ch.entry[1] + ch.dir[1] * t + ch.p[1] * u;
+      return [sx(x, y), sy(x, y)];
+    });
+  }
+
+  function drawChamber(ch, isCurrent) {
+    if (state.outlines) {
+      const c = chamberCorners(ch);
+      ctx.strokeStyle = isCurrent ? "rgba(80,240,255,0.16)" : "rgba(80,240,255,0.07)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(c[0][0], c[0][1]);
+      for (let i = 1; i < 4; i++) ctx.lineTo(c[i][0], c[i][1]);
+      ctx.closePath(); ctx.stroke();
+    }
+
+    // exit arrow: the full far side
+    const a1x = ch.exitC[0] + ch.p[0] * HALF_W, a1y = ch.exitC[1] + ch.p[1] * HALF_W;
+    const a2x = ch.exitC[0] - ch.p[0] * HALF_W, a2y = ch.exitC[1] - ch.p[1] * HALF_W;
+    ctx.strokeStyle = isCurrent ? "rgba(169,123,255,0.8)" : "rgba(169,123,255,0.35)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(sx(a1x, a1y), sy(a1x, a1y));
+    ctx.lineTo(sx(a2x, a2y), sy(a2x, a2y));
+    ctx.stroke();
+
+    // chevrons along the bar, pointing where gravity is about to go
+    const dx = ch.next[0] * ca - ch.next[1] * sa;
+    const dy = ch.next[0] * sa + ch.next[1] * ca;
+    const ux = -dy, uy = dx;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = isCurrent ? "rgba(169,123,255,0.95)" : "rgba(169,123,255,0.4)";
+    for (let k = -2; k <= 2; k++) {
+      const wx = ch.exitC[0] + ch.p[0] * (k * HALF_W * 0.42);
+      const wy = ch.exitC[1] + ch.p[1] * (k * HALF_W * 0.42);
+      const bx = sx(wx, wy), by = sy(wx, wy);
+      if (bx < -60 || bx > W + 60 || by < -60 || by > H + 60) continue;
+      ctx.beginPath();
+      ctx.moveTo(bx + ux * 13 - dx * 10, by + uy * 13 - dy * 10);
+      ctx.lineTo(bx + dx * 10, by + dy * 10);
+      ctx.lineTo(bx - ux * 13 - dx * 10, by - uy * 13 - dy * 10);
+      ctx.stroke();
+    }
+  }
+
+  function draw() {
+    setCamera();
+    ctx.fillStyle = "#05060b";
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = "lighter";
+
+    const lo = Math.max(0, state.at - 1), hi = Math.min(state.chambers.length - 1, state.at + 2);
+    for (let c = lo; c <= hi; c++) drawChamber(state.chambers[c], c === state.at);
+
+    // trail
+    if (state.trail.length > 1) {
+      const total = state.trail.length, BANDS = 10;
+      ctx.lineWidth = 2;
+      for (let b = 0; b < BANDS; b++) {
+        const a = Math.floor(b * (total - 1) / BANDS);
+        const z = Math.floor((b + 1) * (total - 1) / BANDS);
+        if (z - a < 1) continue;
+        const t = (b + 0.5) / BANDS;
+        ctx.strokeStyle = `rgba(120,180,255,${0.03 + 0.47 * t * t})`;
+        ctx.beginPath();
+        for (let i = a; i <= z; i++) {
+          const p = state.trail[i];
+          i === a ? ctx.moveTo(sx(p[0], p[1]), sy(p[0], p[1]))
+                  : ctx.lineTo(sx(p[0], p[1]), sy(p[0], p[1]));
+        }
+        ctx.stroke();
+      }
+    }
+
+    const cur = latchedNode();
+    for (let c = lo; c <= hi; c++) {
+      for (const n of state.chambers[c].nodes) {
+        const X = sx(n.x, n.y), Y = sy(n.x, n.y);
+        if (X < -n.r - 40 || X > W + n.r + 40 || Y < -n.r - 40 || Y > H + n.r + 40) continue;
+        const isActive = n === cur;
+        ctx.strokeStyle = isActive ? "rgba(80,240,255,0.55)" : "rgba(80,240,255,0.15)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(X, Y, n.r, 0, 6.28318530718); ctx.stroke();
+        glow(X, Y, n.core * (isActive ? 4.5 : 3.2), "80,240,255", isActive ? 0.85 : 0.5);
+        ctx.fillStyle = "rgba(235,255,255,0.95)";
+        ctx.beginPath(); ctx.arc(X, Y, n.core, 0, 6.28318530718); ctx.fill();
+      }
+    }
+
+    if (cur && state.charge !== 0 && !state.dead) {
+      const [fx, fy] = chargeForce(state.x, state.y, cur, state.charge, state.charge > 0);
+      const s = Math.min(1, Math.hypot(fx, fy) / FORCE_MAX);
+      ctx.strokeStyle = state.charge > 0
+        ? `rgba(80,240,255,${0.22 + s * 0.75})` : `rgba(255,120,200,${0.22 + s * 0.75})`;
+      ctx.lineWidth = 1 + s * 7;
+      ctx.beginPath();
+      ctx.moveTo(sx(state.x, state.y), sy(state.x, state.y));
+      ctx.lineTo(sx(cur.x, cur.y), sy(cur.x, cur.y));
+      ctx.stroke();
+    }
+
+    if (!state.dead) {
+      glow(EYE_X, EYE_Y, PLAYER_RADIUS * 5, "255,240,120", 0.9);
+      ctx.fillStyle = "rgba(255,240,120,1)";
+      ctx.beginPath(); ctx.arc(EYE_X, EYE_Y, PLAYER_RADIUS, 0, 6.28318530718); ctx.fill();
+    }
+
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  // -------------------------------------------------------------- input + loop
+  const held = { attract: false, repel: false };
+  const charge = () => (held.attract && !held.repel) ? 1
+                     : (held.repel && !held.attract) ? -1 : 0;
+
+  cv.addEventListener("contextmenu", e => e.preventDefault());
+  cv.addEventListener("pointerdown", e => {
+    cv.setPointerCapture(e.pointerId);
+    if (e.button === 2) held.repel = true; else held.attract = true;
+    e.preventDefault();
+  });
+  cv.addEventListener("pointerup", e => {
+    if (e.button === 2) held.repel = false; else held.attract = false;
+  });
+  cv.addEventListener("pointercancel", () => { held.attract = held.repel = false; });
+
+  addEventListener("keydown", e => {
+    const k = e.key.toLowerCase();
+    if (k === "j") held.attract = true;
+    else if (k === "k") held.repel = true;
+    else if (k === "r") respawn(true);
+    else if (k === "n") { generate((state.seed + 1) | 0); respawn(true); }
+    else return;
+    e.preventDefault();
+  });
+  addEventListener("keyup", e => {
+    const k = e.key.toLowerCase();
+    if (k === "j") held.attract = false;
+    else if (k === "k") held.repel = false;
+  });
+
+  const $ = id => document.getElementById(id);
+  function pair(aId, bId, onA, onB) {
+    const a = $(aId), b = $(bId);
+    a.addEventListener("click", () => { a.setAttribute("aria-pressed", "true");
+      b.setAttribute("aria-pressed", "false"); onA(); });
+    b.addEventListener("click", () => { b.setAttribute("aria-pressed", "true");
+      a.setAttribute("aria-pressed", "false"); onB(); });
+  }
+  pair("camRot", "camFix", () => { state.rotating = true; }, () => { state.rotating = false; });
+  pair("outOn", "outOff", () => { state.outlines = true; }, () => { state.outlines = false; });
+  $("ease").addEventListener("input", e => {
+    state.easeMs = +e.target.value; $("easeVal").textContent = `${state.easeMs} ms`;
+  });
+  $("reseed").addEventListener("click", () => { generate((state.seed + 1) | 0); respawn(true); });
+  $("reset").addEventListener("click", () => respawn(true));
+
+  const tFps = $("tFps"), tCh = $("tCh"), tBest = $("tBest"),
+        tDist = $("tDist"), tGrav = $("tGrav"), tSeed = $("tSeed");
+  const GLYPH = ["▼", "◀", "▲", "▶"];
+  let frames = 0, fpsAcc = 0, fpsShown = 0, last = 0, acc = 0;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!last) { last = now; return; }
+    const dt = Math.min((now - last) / 1000, 0.25);
+    last = now;
+
+    state.charge = charge();
+    acc += dt;
+    let steps = 0;
+    while (acc >= DT && steps < MAX_STEPS) {
+      step(state.charge);
+      acc -= DT; steps++;
+      if (!state.dead && ++state.trailTick >= TRAIL_EVERY) {
+        state.trailTick = 0;
+        state.trail.push([state.x, state.y]);
+        if (state.trail.length > TRAIL_MAX) state.trail.shift();
+      }
+    }
+    if (steps === MAX_STEPS) acc = 0;
+
+    if (state.dead) {
+      state.deadTimer += dt;
+      if (state.deadTimer >= RESPAWN) respawn(false);
+    }
+
+    draw();
+
+    fpsAcc += dt; frames++;
+    if (fpsAcc >= 0.4) { fpsShown = frames / fpsAcc; frames = 0; fpsAcc = 0; }
+    tFps.textContent = fpsShown.toFixed(0);
+    tCh.textContent = state.cleared;
+    tBest.textContent = state.best;
+    tDist.textContent = (state.distance / 1000).toFixed(1) + "k";
+    tGrav.textContent = GLYPH[(((Math.round(state.phiTo / HALF_PI) % 4) + 4) % 4)];
+    tSeed.textContent = state.seed;
+  }
+
+  generate(1);
+  respawn(true);
+  requestAnimationFrame(frame);
+})();
+</script>
