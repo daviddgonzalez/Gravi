@@ -219,8 +219,14 @@
   const SIDE_OUT = 90;           // grace past the chamber's side before death
   const KEEP    = 3;             // chambers retained behind the player
 
-  // Player sits above centre so more of the fall is visible.
-  const EYE_X = W / 2, EYE_Y = H * 0.38;
+  // The player sits back from centre so more of the fall ahead is visible.
+  // With the camera rotating, gravity is always screen-down and that is a
+  // fixed point. With the camera FIXED, gravity can point any way, so the
+  // lead has to swing with it — otherwise sideways gravity flies you blind
+  // into the edge of the screen, which would make the accessibility option
+  // (spec 3.3) unusable rather than merely different.
+  const LEAD = H * 0.12;
+  let EYE_X = W / 2, EYE_Y = H * 0.38;
 
   // ------------------------------------------------------------------ helpers
   const rot = (v, a) => {
@@ -472,6 +478,12 @@
     const a = state.rotating ? state.phi : 0;
     ca = Math.cos(a); sa = Math.sin(a);
     ox = state.x; oy = state.y;
+    if (state.rotating) {
+      EYE_X = W / 2; EYE_Y = H / 2 - LEAD;
+    } else {
+      const [gx, gy] = gdir(state.phi);
+      EYE_X = W / 2 - gx * LEAD; EYE_Y = H / 2 - gy * LEAD;
+    }
   }
   const sx = (x, y) => EYE_X + (x - ox) * ca - (y - oy) * sa;
   const sy = (x, y) => EYE_Y + (x - ox) * sa + (y - oy) * ca;
