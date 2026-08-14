@@ -201,12 +201,26 @@ Fixed camera means: do not apply the rotation. Gravity still turns, and the
 player watches it turn. Because rotation is a single transform applied at draw
 time, this is one branch.
 
-**But the framing must still swing.** With the camera rotating, gravity is
-always screen-down and the lead direction is a fixed point. With the camera
-fixed, gravity can point any way, so the lead has to follow the gravity vector
-— otherwise sideways gravity flies the player blind into the edge of the
-screen. The prototype had this wrong at first, and it made the option unusable
-rather than merely different. §3.3 requires this option; it deserves to work.
+**And nothing else about the framing may move either.** With the camera
+rotating, gravity is always screen-down, so the player can sit back from
+centre and see more of the fall ahead. With the camera fixed, gravity can
+point any way — so the player sits **dead centre**, with equal visibility in
+every direction.
+
+The prototype went through both wrong answers first. Keeping the
+rotating-mode lead meant sideways gravity flew the player blind into the edge
+of the screen. Swinging the lead to follow the gravity vector fixed the
+visibility and broke the mode a second way: it panned the view by up to twice
+the lead distance on every flip, which reads as a moving camera just as much
+as a rotation does. Removing rotation is not enough — **a fixed camera must
+have no gravity-driven motion of any kind.** Centring is the only framing that
+satisfies that and still shows the player where they are going.
+
+One thing that does keep turning in this mode, unavoidably: the corridor
+itself. Chambers chain at right angles, so travelling through them bends the
+terrain across the screen. That is the terrain turning, not the camera, and it
+is the whole reason the mode gives a stable reference — screen-up never moves,
+so the bend is legible as a property of the world rather than of the view.
 
 ### 5.3 Rotation happens at draw time
 

@@ -479,10 +479,16 @@
     ca = Math.cos(a); sa = Math.sin(a);
     ox = state.x; oy = state.y;
     if (state.rotating) {
+      // Down is a fixed point on screen, so the lead can be too.
       EYE_X = W / 2; EYE_Y = H / 2 - LEAD;
     } else {
-      const [gx, gy] = gdir(state.phi);
-      EYE_X = W / 2 - gx * LEAD; EYE_Y = H / 2 - gy * LEAD;
+      // Dead centre, and nothing about the framing moves. An earlier attempt
+      // swung the lead with the gravity vector so you could always see ahead
+      // — which panned the view up to 2*LEAD on every flip and read as a
+      // moving camera, defeating the entire point of the mode. Centring gives
+      // equal visibility in every direction instead, which is the honest
+      // answer when gravity can point anywhere.
+      EYE_X = W / 2; EYE_Y = H / 2;
     }
   }
   const sx = (x, y) => EYE_X + (x - ox) * ca - (y - oy) * sa;
@@ -610,6 +616,15 @@
     }
 
     ctx.globalCompositeOperation = "source-over";
+
+    // Mode readout. The corridor itself bends as you travel — that is the
+    // terrain turning, not the camera — so it is worth being able to see at a
+    // glance which mode is actually live.
+    ctx.font = "12px ui-monospace, SFMono-Regular, Menlo, monospace";
+    ctx.textBaseline = "bottom";
+    ctx.fillStyle = state.rotating ? "rgba(111,130,150,0.9)" : "rgba(80,240,255,0.9)";
+    ctx.fillText(state.rotating ? "camera: rotating" : "camera: FIXED — screen up never moves",
+                 16, H - 14);
   }
 
   // -------------------------------------------------------------- input + loop
