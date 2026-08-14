@@ -105,8 +105,9 @@
     <p class="sub">
       No arena and no walls. A generated chain of chambers, each with a node field and
       a violet exit arrow spanning its whole far side — so you don’t aim at the arrow,
-      you aim at <em>where on it</em> you cross. The camera follows and turns so gravity
-      stays screen&#8209;down.
+      you aim at <em>where on it</em> you cross. <strong>Starts with the camera fixed</strong>
+      — screen&#8209;up never moves and you watch gravity turn instead. Switch to Rotating
+      to compare.
     </p>
   </header>
 
@@ -118,8 +119,8 @@
     <div class="cell">
       <span class="eyebrow">Camera</span>
       <div class="seg" role="group" aria-label="Camera mode">
-        <button type="button" id="camRot" aria-pressed="true">Rotating</button>
-        <button type="button" id="camFix" aria-pressed="false">Fixed</button>
+        <button type="button" id="camRot" aria-pressed="false">Rotating</button>
+        <button type="button" id="camFix" aria-pressed="true">Fixed</button>
       </div>
     </div>
     <div class="cell">
@@ -285,7 +286,9 @@
   // ------------------------------------------------------------------- state
   const state = {
     seed: 1,
-    rotating: true,
+    // Defaults to the FIXED camera: screen-up never moves, so there is a
+    // stable reference to judge the rotating mode against. Toggle to compare.
+    rotating: false,
     outlines: true,
     easeMs: 200,
 
