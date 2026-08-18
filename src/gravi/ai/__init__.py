@@ -11,6 +11,18 @@ Nothing in this package may import pygame. The trainer runs natively, headless,
 and never in the browser (spec section 8.6); `tests/test_purity.py` enforces it.
 """
 
+from . import ga
 from .env import Environment, StubEnvironment
+from .ftnn import CHARGE_BY_OUTPUT, FTNN, Shape
+from .genome import random_genome, seed_population
 
-__all__ = ["Environment", "StubEnvironment"]
+__all__ = [
+    "Environment",
+    "StubEnvironment",
+    "FTNN",
+    "Shape",
+    "CHARGE_BY_OUTPUT",
+    "random_genome",
+    "seed_population",
+    "ga",
+]

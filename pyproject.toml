@@ -15,6 +15,16 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pygbag>=0.9",
+    "gravi[train]",
+]
+# The offline trainer and validator only. Deliberately NOT a runtime dependency:
+# the game ships pygame-ce and nothing else, and everything in [project]
+# dependencies has to survive WebAssembly. The trainer runs natively and never
+# in the browser (spec section 8.6), so numpy is fine here and nowhere else.
+# What the trainer *emits* must still load in the browser, which is why
+# checkpoints are JSON rather than .npy.
+train = [
+    "numpy>=2.0",
 ]
 
 [tool.setuptools.packages.find]

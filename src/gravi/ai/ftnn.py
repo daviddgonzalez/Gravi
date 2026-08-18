@@ -1,84 +1,130 @@
-"""Fixed-Topology Neural Network (FTNN) used by AI agents.
+"""Fixed-Topology Neural Network (FTNN), the policy a genome parameterises.
 
-A two-layer fully-connected network: INPUT_SIZE inputs → 12 tanh hidden → 6
-outputs. The 6 outputs correspond one-to-one with the `Action` enum values;
-the trainer's `FTNNAgent.act()` picks `argmax` to choose an action.
+A two-layer fully-connected network: N inputs → H tanh hidden → 3 outputs. The
+three outputs are Gravi's whole action space — repel, neutral, attract — and
+`decide()` takes the argmax.
 
-`FTNN_INPUTS` is imported from `ai/observation.py` (its `INPUT_SIZE`) so the
-network's input layer can never drift from the adapter that feeds it. With the
-current enriched-Observation layout that is 37 inputs:
-    [W1 (37*12=444) | b1 (12) | W2 (12*6=72) | b2 (6)]
-    GENOME_SIZE = 444 + 12 + 72 + 6 = 534
+Two things changed in the port from BlueBall, both deliberate:
+
+**The input width is a parameter, not an import.** BlueBall's version read
+`INPUT_SIZE` from `ai/observation.py` so the network could never drift from the
+adapter feeding it. That coupling is right, but Gravi's observation does not
+exist yet — session S5 designs it, because the same encoding has to serve the
+rival. So the shape travels as an explicit `Shape` alongside the genome, and
+the environment is what declares the width (`Environment.observation_size`).
+The drift protection survives: a genome carries the shape it was trained at,
+and loading it into a different one raises rather than silently reinterpreting
+the weights.
+
+**No legacy genome migration.** BlueBall zero-padded weights to load genomes
+trained before its jump-state inputs existed. Gravi has no trained genomes yet
+and no history to be compatible with; carrying that forward would be importing
+someone else's archaeology.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Sequence
+
 import numpy as np
 
-from .observation import INPUT_SIZE
+from ..field import Charge
 
-FTNN_INPUTS = INPUT_SIZE
-FTNN_HIDDEN = 12
-FTNN_OUTPUTS = 6   # one per Action
+__all__ = ["Shape", "FTNN", "CHARGE_BY_OUTPUT"]
 
-_W1_SIZE = FTNN_INPUTS * FTNN_HIDDEN
-_B1_SIZE = FTNN_HIDDEN
-_W2_SIZE = FTNN_HIDDEN * FTNN_OUTPUTS
-_B2_SIZE = FTNN_OUTPUTS
-
-GENOME_SIZE = _W1_SIZE + _B1_SIZE + _W2_SIZE + _B2_SIZE
+#: Output index → the charge it selects. Index order is the enum's own order,
+#: so an argmax of 0 is the most negative charge and 2 the most positive.
+CHARGE_BY_OUTPUT: tuple[Charge, ...] = (Charge.REPEL, Charge.NEUTRAL, Charge.ATTRACT)
 
 
-# Legacy genome support: genomes trained before the jump-state inputs existed
-# used a 35-input observation (GENOME_SIZE 510). They load into the current
-# 37-input net by inserting zero weights for the two new input rows of W1, so
-# the new inputs contribute nothing and behavior is identical to the legacy
-# net. New training always produces current-size genomes; this only affects
-# LOADING old genomes/assets.
-_LEGACY_INPUTS = 35
-_LEGACY_W1_SIZE = _LEGACY_INPUTS * FTNN_HIDDEN                       # 420
-LEGACY_GENOME_SIZE = _LEGACY_W1_SIZE + _B1_SIZE + _W2_SIZE + _B2_SIZE  # 510
+@dataclass(frozen=True)
+class Shape:
+    """The network's dimensions, and the genome length they imply.
 
+    Frozen and carried with the genome: a population, a checkpoint and a
+    network all agree on one of these or the load fails loudly.
+    """
 
-def migrate_genome(genome: np.ndarray) -> np.ndarray:
-    """Return a current-size genome. Current-size input is returned unchanged;
-    a legacy (35-input) genome is expanded by zero-padding the new W1 input
-    rows. Any other shape is an error."""
-    if genome.shape == (GENOME_SIZE,):
-        return genome
-    if genome.shape == (LEGACY_GENOME_SIZE,):
-        pad = np.zeros((FTNN_INPUTS - _LEGACY_INPUTS) * FTNN_HIDDEN, dtype=np.float32)
-        return np.concatenate([
-            genome[:_LEGACY_W1_SIZE].astype(np.float32),
-            pad,
-            genome[_LEGACY_W1_SIZE:].astype(np.float32),
-        ])
-    raise ValueError(
-        f"genome of shape {genome.shape} is neither current ({GENOME_SIZE},) "
-        f"nor legacy ({LEGACY_GENOME_SIZE},)"
-    )
+    inputs: int
+    hidden: int
+    outputs: int
+
+    @property
+    def w1_size(self) -> int:
+        return self.inputs * self.hidden
+
+    @property
+    def w2_size(self) -> int:
+        return self.hidden * self.outputs
+
+    @property
+    def genome_size(self) -> int:
+        """[ W1 | b1 | W2 | b2 ] laid out flat."""
+        return self.w1_size + self.hidden + self.w2_size + self.outputs
+
+    def as_dict(self) -> dict:
+        return {"inputs": self.inputs, "hidden": self.hidden, "outputs": self.outputs}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Shape":
+        return cls(
+            inputs=int(data["inputs"]),
+            hidden=int(data["hidden"]),
+            outputs=int(data["outputs"]),
+        )
 
 
 class FTNN:
-    """An INPUT_SIZE → 12 tanh → 6 fully-connected network. Pure numpy."""
+    """An inputs → hidden (tanh) → 3 fully-connected network. Pure numpy."""
 
-    def __init__(self, genome: np.ndarray) -> None:
-        genome = migrate_genome(genome)
-        if genome.dtype != np.float32:
-            genome = genome.astype(np.float32)
-        else:
-            genome = genome.copy()
+    #: One verb, three states. There is no fourth output.
+    OUTPUTS = 3
+
+    #: Hidden width carried over from BlueBall, which trained fine at 12.
+    DEFAULT_HIDDEN = 12
+
+    @classmethod
+    def shape(cls, *, inputs: int, hidden: int | None = None) -> Shape:
+        """The Shape for an observation of `inputs` floats."""
+        if inputs < 1:
+            raise ValueError(f"inputs must be positive, got {inputs}")
+        hidden = cls.DEFAULT_HIDDEN if hidden is None else hidden
+        if hidden < 1:
+            raise ValueError(f"hidden must be positive, got {hidden}")
+        return Shape(inputs=inputs, hidden=hidden, outputs=cls.OUTPUTS)
+
+    def __init__(self, genome: np.ndarray, shape: Shape) -> None:
+        if genome.shape != (shape.genome_size,):
+            raise ValueError(
+                f"genome of shape {genome.shape} does not fit a network of "
+                f"{shape.inputs}x{shape.hidden}x{shape.outputs} "
+                f"(expected ({shape.genome_size},))"
+            )
+        self.shape_ = shape
+        weights = genome.astype(np.float32, copy=True)
 
         i = 0
-        self._W1 = genome[i:i + _W1_SIZE].reshape(FTNN_INPUTS, FTNN_HIDDEN)
-        i += _W1_SIZE
-        self._b1 = genome[i:i + _B1_SIZE]
-        i += _B1_SIZE
-        self._W2 = genome[i:i + _W2_SIZE].reshape(FTNN_HIDDEN, FTNN_OUTPUTS)
-        i += _W2_SIZE
-        self._b2 = genome[i:i + _B2_SIZE]
+        self._W1 = weights[i:i + shape.w1_size].reshape(shape.inputs, shape.hidden)
+        i += shape.w1_size
+        self._b1 = weights[i:i + shape.hidden]
+        i += shape.hidden
+        self._W2 = weights[i:i + shape.w2_size].reshape(shape.hidden, shape.outputs)
+        i += shape.w2_size
+        self._b2 = weights[i:i + shape.outputs]
 
     def forward(self, x: np.ndarray) -> np.ndarray:
-        """Run one observation through the network. Returns shape (FTNN_OUTPUTS,)."""
+        """Run one observation through the network. Returns shape (3,)."""
         h = np.tanh(x @ self._W1 + self._b1)
         return (h @ self._W2 + self._b2).astype(np.float32, copy=False)
+
+    def decide(self, observation: Sequence[float]) -> Charge:
+        """The charge this policy picks for `observation`. Argmax over the
+        three outputs; ties go to the lower index, which numpy already does."""
+        obs = np.asarray(observation, dtype=np.float32)
+        if obs.shape != (self.shape_.inputs,):
+            raise ValueError(
+                f"observation of width {obs.shape} does not fit a network "
+                f"expecting {self.shape_.inputs} inputs"
+            )
+        return CHARGE_BY_OUTPUT[int(np.argmax(self.forward(obs)))]
