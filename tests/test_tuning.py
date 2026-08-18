@@ -77,3 +77,13 @@ def test_restore_defaults():
     state.values["k_attract"] = 99.0
     state.restore_defaults()
     assert state.values["k_attract"] == config.TUNABLES["k_attract"][0]
+
+
+def test_load_ignores_unknown_and_missing_keys(tmp_path):
+    """A preset written before the rename must not crash the game."""
+    path = tmp_path / "old.json"
+    path.write_text('{"gravity_y": 900.0, "k_attract": 12.0}', encoding="utf-8")
+    state = TuningState(config.default_tunables())
+    assert state.load(path) is True
+    assert state.values["k_attract"] == 12.0
+    assert state.values["gravity"] == config.TUNABLES["gravity"].default

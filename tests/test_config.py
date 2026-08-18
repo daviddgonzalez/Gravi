@@ -12,3 +12,16 @@ def test_default_tunables_returns_a_fresh_dict():
     b = config.default_tunables()
     a["k_attract"] = 999.0
     assert b["k_attract"] == config.TUNABLES["k_attract"][0]
+
+
+def test_gravity_is_a_magnitude_now():
+    assert "gravity_y" not in config.TUNABLES
+    assert config.TUNABLES["gravity"].default == 500.0
+
+
+def test_flip_and_chamber_knobs_are_tunable():
+    assert config.TUNABLES["flip_duration"].lo == 0.0
+    assert config.TUNABLES["flip_duration"].hi >= 0.6
+    assert config.TUNABLES["chamber_depth"].lo <= 800.0
+    assert config.TUNABLES["chamber_depth"].hi >= 2600.0
+    assert "chamber_half_width" in config.TUNABLES

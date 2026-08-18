@@ -58,7 +58,9 @@ TUNABLES: dict[str, TunableSpec] = {
     "k_attract":     TunableSpec(15.0,   0.5,   0.5,  60.0),
     "k_repel":       TunableSpec(15.0,   0.5,   0.5, 120.0),
     "force_max":     TunableSpec(4500.0, 100.0, 100.0, 20000.0),
-    "gravity_y":     TunableSpec(500.0,  25.0, -2000.0, 4000.0),
+    # A magnitude now, not a signed y component: the direction lives in
+    # gravity.GravityState and turns a quarter at a time.
+    "gravity":       TunableSpec(500.0,  25.0, -2000.0, 4000.0),
     # speed_max bounds HORIZONTAL speed only, and fall_speed_max bounds
     # downward speed. They are deliberately separate: a single isotropic
     # clamp on |v| makes gravity pay for its downward velocity out of the
@@ -68,6 +70,14 @@ TUNABLES: dict[str, TunableSpec] = {
     "speed_max":      TunableSpec(600.0,  50.0,  100.0, 8000.0),
     "fall_speed_max": TunableSpec(600.0,  50.0,  100.0, 8000.0),
     "player_radius":  TunableSpec(7.0,    1.0,    2.0,   40.0),
+    # Spec 9's two open questions live here. flip_duration is what criterion 2
+    # (comfortable at rate) is judged on. chamber_depth is the flip-FREQUENCY
+    # knob: at identical physics it sets how long a player spends between
+    # arrows, so it is how the shipped game slows down or speeds up. 1150 gave
+    # ~26 gravity swaps per minute and read as too hard; 1600 gives ~8.
+    "flip_duration":  TunableSpec(0.30,   0.02,   0.0,     0.60),
+    "chamber_depth":  TunableSpec(1600.0, 50.0,  800.0,  2600.0),
+    "chamber_half_width": TunableSpec(460.0, 20.0, 260.0, 900.0),
 }
 
 
