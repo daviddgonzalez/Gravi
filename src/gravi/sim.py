@@ -71,7 +71,7 @@ class World:
         already settled onto that chamber's direction — a run must never open
         mid-flip."""
         ch = self.chain.current
-        self.x, self.y = ch.world(60.0, 0.0)
+        self.x, self.y = ch.spawn()
         self.vx = 0.0
         self.vy = 0.0
         self.dead = False
@@ -238,6 +238,15 @@ class World:
             self.chain.advance()
             self.cleared += 1
             self._latch = None              # no handoff across the seam
+
+            # Arrive at the next chamber's entry, wherever the chain says that
+            # is. In the corridor it is exactly the exit just crossed, so this
+            # is a no-op and the seam stays continuous; a chain that loops back
+            # on itself (the lab) uses it to put the player at the entrance
+            # again without a second physics path.
+            nxt = self.chain.current
+            self.x += nxt.entry[0] - ch.exit_center[0]
+            self.y += nxt.entry[1] - ch.exit_center[1]
         elif abs(u) > ch.params.half_width + ch.params.side_grace:
             self.dead = True
         elif t < -600.0:

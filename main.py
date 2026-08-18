@@ -31,7 +31,7 @@ from gravi.editor import RoomEditor  # noqa: E402
 from gravi.render import hud, neon  # noqa: E402
 from gravi.render.camera import Camera  # noqa: E402
 from gravi.render.trail import Trail  # noqa: E402
-from gravi.room import load_room, save_room  # noqa: E402
+from gravi.room import LabChain, load_room, save_room  # noqa: E402
 from gravi.sim import World, charge_from_input  # noqa: E402
 from gravi.tuning import TuningState  # noqa: E402
 
@@ -48,9 +48,12 @@ def chamber_params(tunables: dict[str, float]) -> ChamberParams:
                          half_width=tunables["chamber_half_width"])
 
 
-def build_world(seed: int, tunables: dict[str, float]) -> World:
+def build_world(seed: int, tunables: dict[str, float], chain=None) -> World:
+    """`chain` is the lab's looping single chamber when --room is given, and
+    a freshly seeded corridor otherwise. One World either way."""
     return World(
-        chain=ChamberChain(seed=seed, params=chamber_params(tunables)),
+        chain=chain if chain is not None
+        else ChamberChain(seed=seed, params=chamber_params(tunables)),
         params=FieldParams(
             k_attract=tunables["k_attract"],
             k_repel=tunables["k_repel"],
@@ -100,10 +103,18 @@ async def main() -> None:
     adjust_hold = 0.0
     adjust_accum = 0.0
 
-    room = None
-    editor = None
+    # --room runs a hand-authored room as one looping chamber, with the
+    # editor live. It is a lab for authoring a node field, not a second game.
+    room_path = None
+    if "--room" in sys.argv:
+        index = sys.argv.index("--room")
+        room_path = Path(sys.argv[index + 1]) if index + 1 < len(sys.argv) else ROOM_PATH
+
+    room = load_room(room_path) if room_path is not None else None
+    lab = LabChain(room) if room is not None else None
+    editor = RoomEditor(room) if room is not None else None
     seed = random.randrange(1 << 30)
-    world = build_world(seed, tunables)
+    world = build_world(seed, tunables, chain=lab)
     trail = Trail(config.TRAIL_MAX_POINTS)
     camera = Camera(config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
     # Fixed is the mode the game opens in (slice 2 spec, amendment A1): the
@@ -133,7 +144,7 @@ async def main() -> None:
                     # unit of play now, and its seed is what makes it one.
                     best = max(best, world.cleared)
                     seed = random.randrange(1 << 30)
-                    world = build_world(seed, tunables)
+                    world = build_world(seed, tunables, chain=lab)
                     trail.clear()
                     dead_timer = 0.0
                 elif event.key == pygame.K_c:
@@ -164,27 +175,27 @@ async def main() -> None:
                     status = "defaults restored"
                     status_timer = STATUS_DURATION
                 elif event.key == pygame.K_s and ctrl and room is not None:
-                    ok = save_room(room, ROOM_PATH)
+                    ok = save_room(room, room_path)
                     status = "room saved" if ok else "save unavailable (browser build)"
                     status_timer = STATUS_DURATION
                 elif event.key == pygame.K_DELETE and editor is not None:
                     mx, my = pygame.mouse.get_pos()
-                    editor.delete(float(mx), float(my))
+                    editor.delete(*camera.to_world(float(mx), float(my)))
                 elif (event.key in (pygame.K_LEFTBRACKET, pygame.K_RIGHTBRACKET)
                       and editor is not None):
                     mx, my = pygame.mouse.get_pos()
                     editor.resize_radius(
-                        float(mx), float(my),
+                        *camera.to_world(float(mx), float(my)),
                         -1 if event.key == pygame.K_LEFTBRACKET else +1)
                 elif (event.key in (pygame.K_COMMA, pygame.K_PERIOD)
                       and editor is not None):
                     mx, my = pygame.mouse.get_pos()
                     editor.resize_core(
-                        float(mx), float(my),
+                        *camera.to_world(float(mx), float(my)),
                         -1 if event.key == pygame.K_COMMA else +1)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if editor is not None and pygame.key.get_mods() & pygame.KMOD_ALT:
-                    mx, my = float(event.pos[0]), float(event.pos[1])
+                    mx, my = camera.to_world(float(event.pos[0]), float(event.pos[1]))
                     if event.button == 1:
                         editor.grab(mx, my)
                     elif event.button == 3 and editor.hovered(mx, my) is None:
@@ -195,7 +206,7 @@ async def main() -> None:
             elif (event.type == pygame.MOUSEMOTION and editor is not None
                   and editor.dragging is not None):
                 # No Alt check here: releasing Alt mid-drag must not drop the node.
-                editor.drag(float(event.pos[0]), float(event.pos[1]))
+                editor.drag(*camera.to_world(float(event.pos[0]), float(event.pos[1])))
 
         keys = pygame.key.get_pressed()
         mouse = pygame.mouse.get_pressed(num_buttons=3)
@@ -220,8 +231,12 @@ async def main() -> None:
             adjust_hold = 0.0
             adjust_accum = 0.0
 
-        if apply_tunables(world, tunables) and room is None:
-            # Structural change: same seed, new dimensions, fresh run.
+        if lab is not None:
+            lab.refresh()      # so an edit shows up in the physics, not just the draw
+
+        if apply_tunables(world, tunables) and lab is None:
+            # Structural change: same seed, new dimensions, fresh run. The
+            # lab's dimensions are the room's, so it ignores these.
             best = max(best, world.cleared)
             world = build_world(seed, tunables)
             trail.clear()

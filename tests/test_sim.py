@@ -493,3 +493,34 @@ def test_reset_settles_gravity_onto_the_chamber_and_never_opens_mid_flip():
     w.reset()
     assert w.gravity_state.settled
     assert w.gravity_state.direction() == pytest.approx(w.chain.current.direction, abs=1e-9)
+
+
+def test_crossing_a_looping_chamber_puts_the_player_back_at_its_entrance():
+    """Lab mode: the chain hands back a chamber whose entry is not where the
+    last one ended, and the player must arrive at that entry. In the corridor
+    the two coincide, so this rule is a no-op there."""
+    from gravi.field import Node
+    from gravi.room import LabChain, Room
+
+    room = Room(spawn=(100.0, 60.0), nodes=[Node(400.0, 300.0, 40.0, 4.0)],
+                width=1280.0, height=720.0)
+    w = World(
+        chain=LabChain(room),
+        params=PARAMS,
+        gravity=500.0,
+        gravity_state=GravityState(flip_duration=0.0),
+        player_radius=7.0,
+        speed_max=600.0,
+        fall_speed_max=600.0,
+    )
+    w.x, w.y = 640.0, 719.0
+    w.vx, w.vy = 0.0, 600.0
+    for _ in range(10):
+        w.step(Charge.NEUTRAL)
+        if w.cleared:
+            break
+    assert w.cleared == 1
+    assert not w.dead
+    t, _ = w.chain.current.local(w.x, w.y)
+    assert t == pytest.approx(0.0, abs=1e-9)      # back at the entrance line
+    assert w.gravity_state.target_turns == 0      # and gravity never turned

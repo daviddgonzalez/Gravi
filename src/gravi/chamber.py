@@ -111,6 +111,12 @@ class Chamber:
         w = self.params.half_width
         return (self.world(self.params.depth, w), self.world(self.params.depth, -w))
 
+    def spawn(self) -> Vec:
+        """Where a run opens in this chamber: on the centre lane, just inside
+        the entrance. A hand-authored lab chamber overrides this, because its
+        room was authored around a spawn of its own."""
+        return self.world(60.0, 0.0)
+
     def outline(self) -> tuple[Vec, Vec, Vec, Vec]:
         """The four corners in world space. Retained after the chamber is
         culled, because the end-of-run path map needs the route's geometry."""

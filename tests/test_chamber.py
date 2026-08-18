@@ -102,3 +102,69 @@ def test_nodes_near_covers_the_neighbours_only():
     chain.at = 3
     indices = {c for c, _, _ in chain.nodes_near()}
     assert indices == {2, 3, 4}
+
+
+# --- the lab adapter: one hand-authored room as one chamber ---------------
+
+def test_a_room_becomes_one_chamber_with_the_same_nodes():
+    from gravi.field import Node
+    from gravi.room import Room, room_as_chamber
+
+    room = Room(spawn=(100.0, 60.0), nodes=[Node(400.0, 300.0, 200.0, 16.0)],
+                width=1280.0, height=720.0)
+    ch = room_as_chamber(room)
+    assert [(n.x, n.y) for n in ch.nodes] == [(400.0, 300.0)]
+    assert ch.params.depth == pytest.approx(720.0)
+    assert ch.params.half_width == pytest.approx(640.0)
+    assert ch.direction == pytest.approx((0.0, 1.0))
+
+
+def test_the_lab_chamber_never_turns_gravity():
+    """A lab is for authoring a node field, not for practising flips."""
+    from gravi.field import Node
+    from gravi.room import Room, room_as_chamber
+
+    room = Room(spawn=(100.0, 60.0), nodes=[Node(400.0, 300.0, 200.0, 16.0)],
+                width=1280.0, height=720.0)
+    assert room_as_chamber(room).turn == 0
+
+
+def test_the_lab_chain_loops_instead_of_generating_a_corridor():
+    from gravi.field import Node
+    from gravi.room import LabChain, Room
+
+    room = Room(spawn=(100.0, 60.0), nodes=[Node(400.0, 300.0, 200.0, 16.0)],
+                width=1280.0, height=720.0)
+    chain = LabChain(room)
+    first = chain.current
+    chain.advance()
+    assert chain.current is chain.by_index(chain.at)
+    assert chain.current.entry == first.entry      # the same chamber, again
+    assert chain.by_index(chain.at + 1) is None
+
+
+def test_the_lab_chain_follows_the_editor():
+    from gravi.field import Node
+    from gravi.room import LabChain, Room
+
+    room = Room(spawn=(100.0, 60.0), nodes=[Node(400.0, 300.0, 200.0, 16.0)],
+                width=1280.0, height=720.0)
+    chain = LabChain(room)
+    room.nodes[0] = Node(500.0, 200.0, 200.0, 16.0)
+    chain.refresh()
+    assert (chain.current.nodes[0].x, chain.current.nodes[0].y) == (500.0, 200.0)
+
+
+def test_the_lab_spawns_where_the_room_says_and_the_corridor_on_its_lane():
+    """The slice 1 room spawns at (180, 200) and has a core at (640, 250);
+    spawning a lab run on the corridor's centre lane drops the player straight
+    onto it."""
+    from gravi.field import Node
+    from gravi.room import Room, room_as_chamber
+
+    room = Room(spawn=(180.0, 200.0), nodes=[Node(640.0, 250.0, 200.0, 18.0)],
+                width=1280.0, height=720.0)
+    assert room_as_chamber(room).spawn() == (180.0, 200.0)
+
+    generated = make_chamber(0, (0.0, 0.0), (0.0, 1.0), PARAMS, seed=1)
+    assert generated.spawn() == pytest.approx(generated.world(60.0, 0.0))
