@@ -71,10 +71,16 @@ TUNABLES: dict[str, TunableSpec] = {
     "fall_speed_max": TunableSpec(600.0,  50.0,  100.0, 8000.0),
     "player_radius":  TunableSpec(7.0,    1.0,    2.0,   40.0),
     # Spec 9's two open questions live here. flip_duration is what criterion 2
-    # (comfortable at rate) is judged on. chamber_depth is the flip-FREQUENCY
-    # knob: at identical physics it sets how long a player spends between
-    # arrows, so it is how the shipped game slows down or speeds up. 1150 gave
-    # ~26 gravity swaps per minute and read as too hard; 1600 gives ~8.
+    # (comfortable at the one rate we ship) is judged on. chamber_depth is the
+    # flip-FREQUENCY knob: at identical physics it sets how long a player
+    # spends between arrows. 1150 gave ~26 gravity swaps per minute and read as
+    # too hard; 1600 gives ~8.
+    #
+    # Both are COMFORT CONSTANTS, settled once by playtest (slice 2 spec,
+    # amendment A1). Flip rate is not a difficulty axis: nothing may sample it
+    # per chamber, ramp it with chamber index, or feed it to a difficulty
+    # score. They are sliders here so a playtest can find the value, not so the
+    # game can move it during a run.
     "flip_duration":  TunableSpec(0.30,   0.02,   0.0,     0.60),
     "chamber_depth":  TunableSpec(1600.0, 50.0,  800.0,  2600.0),
     "chamber_half_width": TunableSpec(460.0, 20.0, 260.0, 900.0),

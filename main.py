@@ -106,9 +106,10 @@ async def main() -> None:
     world = build_world(seed, tunables)
     trail = Trail(config.TRAIL_MAX_POINTS)
     camera = Camera(config.WINDOW_WIDTH, config.WINDOW_HEIGHT)
-    # Rotating is the mode slice 2 is judging, so it is the one the game opens
-    # in. The prototype defaults to fixed because it exists to compare them.
-    rotating_camera = True
+    # Fixed is the mode the game opens in (slice 2 spec, amendment A1): the
+    # rotating camera is what makes players sick, so the setting someone who
+    # is getting sick needs is the one they are already in. C swaps them.
+    rotating_camera = False
 
     accumulator = 0.0
     dead_timer = 0.0

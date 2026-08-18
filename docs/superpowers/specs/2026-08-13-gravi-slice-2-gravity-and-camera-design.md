@@ -19,7 +19,7 @@ Three criteria, chosen 2026-08-13. All three are judged by playing, not measured
 | # | Criterion | Fails if |
 |---|---|---|
 | 1 | **No re-orientation beat.** After crossing an arrow you can read your arc and commit to the next grab immediately. | Every flip costs a beat of "wait, where am I". Then the arrow is an interruption, not punctuation, and §3.1's claim that arrows give the run a rhythm is false. |
-| 2 | **Comfortable at rate.** Five minutes at the fastest flip frequency we would ship, without motion sickness. | Sickness arrives below the flip rate the escalation schedule (§3.6) wants. That caps an entire escalation axis, which §3.3 already anticipates. |
+| 2 | **Comfortable at the one rate we ship.** Five minutes at the shipped flip rate, without motion sickness. | Sickness arrives at the shipped rate. Flip rate is no longer a knob that can be turned down for difficulty and back up for escalation (amendment A1), so a rate that makes players sick is a defect in the constant, not a cap on a schedule. |
 | 3 | **A bad crossing is your fault.** You can see the arrow coming, and when you cross it badly you know why. | Crossings feel arbitrary. The generator's structural guarantee (§3.1, "the arrow is the seam") then rests on something the player cannot aim at. |
 
 Criterion 3 was originally worded "missing an arrow feels like your fault".
@@ -30,6 +30,29 @@ judge is the quality of the crossing rather than its occurrence.
 **Explicitly not a gate:** whether the fixed-camera option is *pleasant*. §3.3
 requires it to exist and §5 below specifies it properly, but slice 2 does not
 block on it being as good as the rotating camera.
+
+> **Amendment A1 — 2026-08-17. Flip rate is not a difficulty axis.**
+> Decided by the author during S1's implementation, after playing the
+> prototype: the rotation is nauseating, and turning that dial up is not
+> allowed to be how the game gets harder. Three consequences bind other
+> sessions:
+>
+> 1. **Flip rate is one constant, chosen once for comfort.** Chamber depth
+>    still sets it (§9), but it is picked to be pleasant and then left alone.
+>    It is not sampled per chamber, not ramped by chamber index, and not an
+>    input to any difficulty score. S2's parameter box and difficulty record
+>    must not contain it; S6 must not vary it per archetype; S11 must not tune
+>    it as an escalation curve.
+> 2. **Timed auto-flips are struck** from core spec §3.6's escalation table
+>    (the 50+ row). Escalation comes from what the terrain *means* — spacing,
+>    hazards, depletion, dead zones, required exit vectors — not from spinning
+>    the screen more often.
+> 3. **The game opens with the fixed camera** (§5.2), because that is the
+>    setting a player who is getting sick needs to already be in. The rotating
+>    camera stays, one key away, and stays the thing §5.3 specifies. This makes
+>    the fixed camera's quality matter more than the sentence above assumed:
+>    it is now the default experience, even though slice 2 still does not block
+>    on it matching the rotating one.
 
 ---
 
@@ -325,10 +348,14 @@ Beyond the existing 63 tests, which must keep passing:
   slider precisely because it is the knob criterion 2 will be judged on.
 - **Chamber dimensions.** Half-width 460 comes from the prototype and has not
   been tuned. **Depth is the flip-frequency knob** — it sets how long a player
-  spends between arrows at identical physics, so it is how the shipped game
-  slows down or speeds up. The prototype's first value of 1150 produced ~26
-  gravity swaps per minute, which playtested as too hard to read; 1600 gives
-  ~8. The prototype exposes it as a slider alongside a wall-clock `pace`
+  spends between arrows at identical physics. Per amendment A1 that makes it a
+  comfort constant, settled once by playtest and then fixed: it is no longer
+  "how the shipped game slows down or speeds up", because the shipped game does
+  not change its flip rate at all. The prototype's first value of 1150 produced
+  ~26 gravity swaps per minute, which playtested as too hard to read; 1600
+  gives ~8, and A1 means the honest question is now how deep chambers have to
+  be before five minutes is comfortable, with no upper bound imposed by an
+  escalation schedule. The prototype exposes it as a slider alongside a wall-clock `pace`
   control, which exists only to separate "the tempo is wrong" from "the
   mechanic is wrong" and is not a shippable knob.
 - **Respawn point.** The prototype respawns at the current chamber's entrance

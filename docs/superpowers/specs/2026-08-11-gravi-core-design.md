@@ -140,7 +140,9 @@ On a flip the camera rotates so **gravity is always screen-down**. Fast, eased, 
 
 The alternative (fixed camera, gravity changes underneath) shows the true layout but makes every arc harder to read, and arc-reading is the entire skill.
 
-**Known risk:** at high flip frequency this will make some players motion-sick. That is a hard cap on one escalation axis, and a fixed-camera accessibility option is required, not optional — some players will prefer it outright.
+**Known risk:** at high flip frequency this will make some players motion-sick. A fixed-camera option is therefore required, not optional — some players will prefer it outright, and it is the mode the game opens in.
+
+**Amended 2026-08-17 (slice 2 spec, amendment A1):** flip frequency is not an escalation axis at all. It is one constant chosen for comfort, not a dial the difficulty schedule turns. The risk above is therefore a constraint on that constant rather than a cap on a schedule.
 
 ### 3.4 Branching
 
@@ -164,9 +166,11 @@ The point of §2 is that these knobs are independent, not one dial. Indicative s
 | 16–25 | Dead zones: stretches with no nodes, crossed on inherited momentum only. |
 | 26–35 | Moving and orbiting nodes. Branching arrows appear. |
 | 36–50 | Required exit vectors — arrows that accept only a narrow entry angle. |
-| 50+ | Overlapping node fields (net force from two anchors), timed auto-flips, moving arrows. |
+| 50+ | Overlapping node fields (net force from two anchors), moving arrows. |
 
 Only the first row is about spacing; everything after changes what the terrain *means*.
+
+Timed auto-flips were struck from the last row on 2026-08-17 by amendment A1: raising the flip rate is not allowed to be how the game gets harder.
 
 **Overlapping fields are deliberately last.** They hold the richest emergence (figure-eights, compound slingshots) but they break the one-beam-one-anchor clarity the early game depends on, so they are an endgame reward for a player who already reads the system. Until then, the active node is unambiguously the nearest node whose radius contains the player.
 
