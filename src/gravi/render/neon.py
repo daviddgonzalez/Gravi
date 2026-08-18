@@ -105,6 +105,9 @@ def _glow_at(surface: pygame.Surface, sx: float, sy: float,
 
 def draw_glow(surface: pygame.Surface, x: float, y: float,
               color: tuple[int, int, int], radius: int, camera) -> None:
+    """`radius` is in PIXELS here, not world units: this is the raw primitive,
+    and its callers already know how big they want the sprite. Anything drawing
+    a world length scales it with camera.scale_length first."""
     _glow_at(surface, *camera.to_screen(x, y), color, radius)
 
 
@@ -121,15 +124,21 @@ def draw_node(surface: pygame.Surface, node, is_active: bool, camera) -> None:
     """
     # Only the centre transforms. Circles are rotation-invariant, which is
     # why rotating at draw time costs almost nothing here.
+    #
+    # Radii go through camera.scale_length because they are world lengths: the
+    # ring IS the influence radius, so at a widened view a ring left in pixels
+    # would draw a reach the force does not have. The 2px line width does not
+    # scale — that is legibility, not geometry.
     sx, sy = camera.to_screen(node.x, node.y)
+    radius = max(1, int(camera.scale_length(node.radius)))
+    core = max(1, int(camera.scale_length(node.core_radius)))
     pygame.draw.circle(surface,
                        _scaled(config.COLOR_NODE, (110 if is_active else 40) / 255.0),
-                       (int(sx), int(sy)), int(node.radius), width=2)
+                       (int(sx), int(sy)), radius, width=2)
 
     _glow_at(surface, sx, sy, config.COLOR_NODE,
-             int(node.core_radius * (4 if is_active else 3)))
-    pygame.draw.circle(surface, config.COLOR_CORE,
-                       (int(sx), int(sy)), int(node.core_radius))
+             max(1, core * (4 if is_active else 3)))
+    pygame.draw.circle(surface, config.COLOR_CORE, (int(sx), int(sy)), core)
 
 
 def draw_beam(surface: pygame.Surface, px: float, py: float, node,
@@ -160,8 +169,9 @@ def draw_beam(surface: pygame.Surface, px: float, py: float, node,
 def draw_player(surface: pygame.Surface, x: float, y: float, radius: float,
                 camera) -> None:
     sx, sy = camera.to_screen(x, y)
-    _glow_at(surface, sx, sy, config.COLOR_PLAYER, int(radius * 5))
-    pygame.draw.circle(surface, config.COLOR_PLAYER, (int(sx), int(sy)), int(radius))
+    scaled = max(1, int(camera.scale_length(radius)))
+    _glow_at(surface, sx, sy, config.COLOR_PLAYER, scaled * 5)
+    pygame.draw.circle(surface, config.COLOR_PLAYER, (int(sx), int(sy)), scaled)
 
 
 def draw_chamber(surface: pygame.Surface, chamber, camera,

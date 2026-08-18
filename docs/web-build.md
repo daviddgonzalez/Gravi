@@ -8,6 +8,21 @@ packages a pygame-ce app to WebAssembly.
 
 Verified working with pygbag 0.9.3 on 2026-08-11.
 
+## Serve it with pygbag, not with a static server
+
+`python -m http.server --directory build/web` looks like it should work and does
+not. The page loads, click-to-start works, and then it hangs forever, because
+the runtime fetches its own wheels through a **relative** path:
+
+    GET /cdn/cp312/pygame_ce-2.5.7-cp312-cp312-wasm32_bi_emscripten.whl -> 404
+
+`pygbag`'s dev server proxies `/cdn/` out to the pygame-web CDN and caches it; a
+static server has nothing to serve there. The symptom is indistinguishable from
+a slow first load, so check the server's access log for a 404 under `/cdn/`
+before assuming the WASM build is merely slow. Found the hard way on 2026-08-18.
+
+    pygbag --port 8000 main.py    # builds, then serves with the /cdn proxy
+
 ## Constraints this imposes
 
 - `main.py` must stay at the repo root — pygbag packages the directory it is

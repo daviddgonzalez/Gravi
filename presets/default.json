@@ -1,4 +1,5 @@
 {
+  "camera_lead": 0.12,
   "chamber_depth": 1600.0,
   "chamber_half_width": 460.0,
   "fall_speed_max": 600.0,
@@ -8,5 +9,6 @@
   "k_attract": 15.0,
   "k_repel": 15.0,
   "player_radius": 7.0,
-  "speed_max": 600.0
+  "speed_max": 600.0,
+  "view_width": 1280.0
 }

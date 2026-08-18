@@ -164,3 +164,33 @@ def test_the_arrow_spans_the_whole_far_side(screen):
     dark = brightness(screen, 400, 550)
     for point in (a, b, middle):
         assert peak_brightness(screen, *point) > dark
+
+
+def test_a_widened_view_draws_a_smaller_node_ring(screen):
+    """Node radii are world lengths, not pixels. If they did not scale, the
+    influence ring would lie about where the force actually reaches once the
+    view is widened — and the ring IS the ruleset (spec section 7)."""
+    node = Node(400.0, 300.0, 120.0, 14.0)
+    cam = Camera(800, 600)
+    cam.update(400.0, 300.0, angle=0.0, rotating=False, view_width=1600.0)
+
+    screen.fill(config.COLOR_BG)
+    neon.draw_node(screen, node, is_active=False, camera=cam)
+
+    dark = brightness(screen, 400, 560)
+    assert peak_brightness(screen, 400 + 60, 300) > dark, "ring at half radius"
+    assert peak_brightness(screen, 400 + 120, 300) <= dark, "nothing at full radius"
+
+
+def test_a_widened_view_draws_a_smaller_player(screen):
+    cam = Camera(800, 600)
+
+    cam.update(400.0, 300.0, angle=0.0, rotating=False, view_width=1600.0)
+    screen.fill(config.COLOR_BG)
+    neon.draw_player(screen, 400.0, 300.0, 20.0, cam)
+    widened = brightness(screen, 412, 300)
+
+    cam.update(400.0, 300.0, angle=0.0, rotating=False)
+    screen.fill(config.COLOR_BG)
+    neon.draw_player(screen, 400.0, 300.0, 20.0, cam)
+    assert brightness(screen, 412, 300) > widened

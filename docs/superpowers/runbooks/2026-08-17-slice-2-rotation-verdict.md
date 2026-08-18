@@ -38,6 +38,14 @@ is now the default experience. Slice 2 still does not block on it matching the
 rotating camera, but a playtest that finds it unpleasant is a finding worth
 recording rather than a non-issue.
 
+**Amendment A2 — field of view is a knob** (slice 2 spec §1, §5.1, §9). Also
+requested by the author mid-playtest: you must be able to see far enough ahead
+to plan a grab. `view_width` (both cameras) and `camera_lead` (rotating only)
+are draw-time tunables; world lengths scale with the view, screen furniture does
+not, and the set of chambers drawn — nodes included — is derived from the view
+so a widened view can never show an outline with no node field in it. A1's
+no-pan invariant is untouched: the fixed camera still gets no lead.
+
 **Two generator/sim corrections** found by the tests rather than by play:
 
 1. Sampling node offsets uniformly across the chamber's half-width produced
@@ -68,6 +76,8 @@ defaults, which are the prototype's tuned values:
 | `chamber_depth` | 1600.0 | ~8 gravity swaps/minute in the prototype (1150 gave ~26 and read as too hard) |
 | `chamber_half_width` | 460.0 | Untuned, straight from the prototype |
 | `gravity` | 500.0 | Renamed from `gravity_y`; a magnitude now |
+| `view_width` | 1280.0 | 1:1, i.e. the framing before amendment A2. Untuned |
+| `camera_lead` | 0.12 | Was a hard-coded constant; rotating camera only |
 
 Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,
 `speed_max` 600.0, `fall_speed_max` 600.0) are **unchanged from slice 1**. See
@@ -98,10 +108,17 @@ Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,
 2. Record fps and physics-step saturation from the in-game overlay as numbers.
 3. Judge criteria 1, 2 and 3 with an explicit yes/no each, and say why.
 4. Sweep `flip_duration` and `chamber_depth` while playing; write the winning
-   values into `presets/default.json`.
-5. Confirm the fixed camera (now the default) is usable, and say whether the
-   rotating one is still worth shipping behind `C`.
-6. Fill in the decision line: PROCEED or STOP.
+   values into `presets/default.json`. Note that `F5` writes
+   `presets/current.json` (the gitignored scratch slot), so the winning numbers
+   have to be copied across deliberately.
+5. Sweep `view_width` — and, on the rotating camera, `camera_lead` — and answer
+   A2's open question: how much world has to be on screen before a grab two
+   chambers away is plannable rather than a surprise.
+6. Confirm the fixed camera (now the default) is usable, and say whether the
+   rotating one is still worth shipping behind `C`. Because the fixed camera may
+   not lead (A1, A2), widening the view is the only room-ahead it gets — say
+   whether that is enough.
+7. Fill in the decision line: PROCEED or STOP.
 
 ## Coverage gaps
 
@@ -112,6 +129,12 @@ Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,
 - The playtest that produced amendment A1 was on `proto/terrain-demo.html`,
   not on this build. Whether the pygame build reads the same way is unknown.
 - `chamber_half_width` has never been tuned by anyone, in any build.
+- Neither field-of-view knob has been tuned by anyone (amendment A2). The unit
+  tests prove the transform is correct and that widening cannot pan the fixed
+  camera; nothing proves a given width is *readable*.
+- The browser build was hung behind a static server that 404s `/cdn/` until
+  2026-08-18, so no browser session before that date got past click-to-start.
+  See `docs/web-build.md`.
 
 ## For other sessions
 

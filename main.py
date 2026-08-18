@@ -29,7 +29,7 @@ from gravi.field import Charge, FieldParams, charge_force  # noqa: E402
 from gravi.gravity import GravityState  # noqa: E402
 from gravi.editor import RoomEditor  # noqa: E402
 from gravi.render import hud, neon  # noqa: E402
-from gravi.render.camera import Camera  # noqa: E402
+from gravi.render.camera import Camera, chambers_in_view  # noqa: E402
 from gravi.render.trail import Trail  # noqa: E402
 from gravi.room import LabChain, load_room, save_room  # noqa: E402
 from gravi.sim import World, charge_from_input  # noqa: E402
@@ -277,10 +277,15 @@ async def main() -> None:
         # --- draw ---
         screen.fill(config.COLOR_BG)
         camera.update(world.x, world.y, world.gravity_state.angle,
-                      rotating=rotating_camera)
+                      rotating=rotating_camera,
+                      view_width=tunables["view_width"],
+                      lead=tunables["camera_lead"])
 
-        # Corridor first: the chamber you are in, one behind, two ahead.
-        for index in range(max(0, world.chain.at - 1), world.chain.at + 3):
+        # Corridor first: the chamber you are in, one behind, and as far ahead
+        # as this field of view can actually see into.
+        visible = chambers_in_view(world.chain.at, tunables["view_width"],
+                                   world.chain.params.depth)
+        for index in visible:
             chamber = world.chain.by_index(index)
             if chamber is None:
                 continue
@@ -294,8 +299,18 @@ async def main() -> None:
         # lights up and the one the beam points at — the player may well be
         # outside its ring by now.
         anchor = world.latched_node() or world.active_node()
-        for _, _, node in world.chain.nodes_near():
-            neon.draw_node(screen, node, is_active=node is anchor, camera=camera)
+        # Nodes over the SAME span as the outlines, not over the physics window
+        # (chain.nodes_near, which stays exactly as specced). Drawing has to be
+        # the wider of the two: a corridor drawn with its node field missing
+        # reads as an empty one, which is precisely the wrong thing to plan
+        # against.
+        for index in visible:
+            chamber = world.chain.by_index(index)
+            if chamber is None:
+                continue
+            for node in chamber.nodes:
+                neon.draw_node(screen, node, is_active=node is anchor,
+                               camera=camera)
 
         if anchor is not None and charge is not Charge.NEUTRAL and not world.dead:
             # Mirrors World.step exactly, or the beam would draw a force the

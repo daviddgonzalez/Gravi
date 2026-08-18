@@ -84,6 +84,19 @@ TUNABLES: dict[str, TunableSpec] = {
     "flip_duration":  TunableSpec(0.30,   0.02,   0.0,     0.60),
     "chamber_depth":  TunableSpec(1600.0, 50.0,  800.0,  2600.0),
     "chamber_half_width": TunableSpec(460.0, 20.0, 260.0, 900.0),
+    # Field of view, both draw-time only (render/camera.py). view_width is how
+    # many world units fit across the window, so BIGGER SEES MORE; 1280 against
+    # a 1280px window is 1:1, the framing slice 2 shipped with. Widening it is
+    # how you get far enough ahead of the player to plan a grab rather than
+    # react to it, and it costs nothing in the simulation — the validator and
+    # the trainer never see it (core spec 8.1).
+    #
+    # camera_lead only reaches the ROTATING camera: it sits the eye back along
+    # screen-up so more of the fall ahead is on screen. The fixed camera is
+    # centred and stays centred (amendment A1), so widening the view is the
+    # only way it gets more room ahead.
+    "view_width":     TunableSpec(1280.0, 80.0,  640.0, 3200.0),
+    "camera_lead":    TunableSpec(0.12,   0.02,   0.0,     0.40),
 }
 
 
