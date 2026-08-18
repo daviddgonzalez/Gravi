@@ -111,33 +111,54 @@ its own knobs at runtime could not be swept.
 tightness both scale badly with dimension count (§3.4), so each archetype spends
 six dimensions deliberately and pins the rest.
 
-### 2.3 The entry contract, and why "accepts a downward entry" is the wrong question
+### 2.3 The entry contract: every chamber is entered downward
 
-Core spec §4.3 imagines the runtime asking for *"a chamber measured at
-difficulty 0.62 that accepts a downward entry"*. Slice 2 §4.3 makes the
-direction half of that question vacuous, and this is worth stating plainly
-because it deletes a whole category of bookkeeping.
+Core spec §4.3 pictures the runtime asking for *"a chamber measured at difficulty
+0.62 that accepts a downward entry"*. Half of that question answers itself. Saying
+why, plainly, deletes a whole category of bookkeeping before anyone writes it.
 
-A chamber is generated in its own frame: origin at the entrance centre, `+d`
-into the chamber along gravity, `+perp(d)` across it. Every chamber is entered
-at lateral offset **exactly zero**, travelling along `+d`. So in local
-coordinates **every chamber is entered downward, always**. No archetype can be
-direction-specific, and none declares a direction.
+**Chambers are built in their own frame, not the world's.** Every chamber carries
+its own axes: origin at the centre of its entrance, `+d` pointing into the chamber
+the way gravity pulls, `+perp(d)` running across it. The generator works only in
+these local axes. It never knows — and never needs to know — which way the chamber
+will end up facing in the world.
 
-What genuinely varies, and what an archetype therefore *does* declare, is the
-**entry envelope**:
+**In that frame, entry is always identical.** Slice 2 §4.3 derives it: a 90° turn
+swaps the two axes, so the old across-axis becomes the new down-axis. Concretely,
+you cross an arrow at some sideways offset `u`; the next chamber's down-axis is
+the axis you were just moving across, so that same `u` becomes your **depth** in
+the new chamber, and your sideways offset there works out to exactly **zero**. You
+always begin on the centre line, always travelling along `+d`. There is no second
+way in.
 
-- **entry depth** — the offset at which the player crossed the previous arrow
-  becomes their depth in this one (slice 2 §4.3). Its range is bounded by the
-  *previous* chamber's half-width, so it is a cross-chamber coupling and must be
-  checked against the player's actual state at lookup time, not assumed. It may
-  be negative: crossing short means starting behind the entrance line.
-- **entry speed** — the magnitude of the velocity carried through the arrow.
+So "accepts a downward entry" describes every chamber that will ever exist. No
+archetype can be direction-specific, and none declares a direction.
 
-So the runtime query is `(target difficulty, entry state, exits wanted)`, and
-"accepts a downward entry" resolves to "whose entry envelope contains the
-player's actual `(depth, speed)`". This is a refinement of §4.3's phrasing, not
-a contradiction of it.
+#### What actually varies
+
+Two quantities, and they are what an archetype does declare — its **entry
+envelope**:
+
+- **entry depth** — how far into the chamber you start. It is the arrow offset you
+  just crossed at, so its range is set by the **previous** chamber's half-width,
+  not this one's. At half-width 460 that spans −460 to +460. Cross wide at +300
+  and you begin 300 px in, skipping the chamber's first stretch of node field.
+  Cross short at −200 and you begin 200 px *behind* the entrance line, with that
+  much extra falling to do before the chamber's content even starts.
+- **entry speed** — the magnitude of the velocity you carry through the arrow.
+
+Entry depth is the only field in the schema that couples two chambers together.
+That is what makes it the one value a lookup must test against the player's live
+state instead of assuming, and why the envelope belongs to the archetype rather
+than being a global constant.
+
+#### What the runtime asks instead
+
+The query is `(target difficulty, entry state, exits wanted)`, and "accepts a
+downward entry" resolves to one concrete test: *does this box's entry envelope
+contain the player's current `(depth, speed)`?* Same question core spec §4.3
+wanted to ask, with the half that answers itself replaced by the half that carries
+information. This is a refinement of §4.3's phrasing, not a contradiction of it.
 
 ### 2.4 The exit contract, and branching geometry
 
