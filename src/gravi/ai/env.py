@@ -21,7 +21,7 @@ from typing import Protocol, runtime_checkable
 
 from ..field import Charge
 
-__all__ = ["Environment", "StubEnvironment"]
+__all__ = ["Environment", "Fitness", "StubEnvironment", "score_of"]
 
 
 @runtime_checkable
@@ -58,6 +58,33 @@ class Environment(Protocol):
         """What happened, for the fitness function to read. Always carries a
         `score` key."""
         ...
+
+
+@runtime_checkable
+class Fitness(Protocol):
+    """Turns an episode's outcome into one number the GA selects on.
+
+    Separate from the environment on purpose. What the agent is *rewarded for*
+    is a design decision (session S5) independent of what the world *does*, and
+    BlueBall's history is the argument for the split: its fitness function grew
+    goal bonuses, key counts, collectible weights and a purposeful-jump term,
+    each of which changed what the agent became without changing the game at
+    all. Keeping the two apart means retuning the reward never means editing
+    the simulation.
+    """
+
+    def __call__(self, outcome: dict) -> float:
+        ...
+
+
+def score_of(outcome: dict) -> float:
+    """The default `Fitness`: take the environment at its word.
+
+    A real fitness function weighs an outcome's parts against each other; this
+    one just reads `score`, which is all the stub needs and all S5 should have
+    to replace.
+    """
+    return float(outcome["score"])
 
 
 def _as_charge(value: object) -> Charge:
