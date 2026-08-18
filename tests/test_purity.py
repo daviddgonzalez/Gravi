@@ -8,7 +8,7 @@ import sys
 
 def test_sim_core_does_not_import_pygame():
     code = (
-        "import gravi.sim, gravi.field, gravi.room, sys; "
+        "import gravi.sim, gravi.field, gravi.room, gravi.storage, sys; "
         "assert 'pygame' not in sys.modules, sorted(m for m in sys.modules if 'pygame' in m)"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
