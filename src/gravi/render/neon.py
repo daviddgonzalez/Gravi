@@ -95,14 +95,20 @@ def _glow_sprite(color: tuple[int, int, int], radius: int) -> pygame.Surface:
     return surface
 
 
-def draw_glow(surface: pygame.Surface, x: float, y: float,
-              color: tuple[int, int, int], radius: int) -> None:
+def _glow_at(surface: pygame.Surface, sx: float, sy: float,
+             color: tuple[int, int, int], radius: int) -> None:
+    """Glow at a point already in screen space."""
     sprite = _glow_sprite(color, radius)
-    surface.blit(sprite, (int(x) - radius, int(y) - radius),
+    surface.blit(sprite, (int(sx) - radius, int(sy) - radius),
                  special_flags=pygame.BLEND_ADD)
 
 
-def draw_node(surface: pygame.Surface, node, is_active: bool) -> None:
+def draw_glow(surface: pygame.Surface, x: float, y: float,
+              color: tuple[int, int, int], radius: int, camera) -> None:
+    _glow_at(surface, *camera.to_screen(x, y), color, radius)
+
+
+def draw_node(surface: pygame.Surface, node, is_active: bool, camera) -> None:
     """Influence ring at `node.radius`, lethal core at `node.core_radius`.
 
     The ring is drawn straight onto the screen rather than blitted from a
@@ -113,18 +119,22 @@ def draw_node(surface: pygame.Surface, node, is_active: bool) -> None:
     where two rings overlap; at these brightnesses over a near-black field
     the difference is a few units per channel.
     """
+    # Only the centre transforms. Circles are rotation-invariant, which is
+    # why rotating at draw time costs almost nothing here.
+    sx, sy = camera.to_screen(node.x, node.y)
     pygame.draw.circle(surface,
                        _scaled(config.COLOR_NODE, (110 if is_active else 40) / 255.0),
-                       (int(node.x), int(node.y)), int(node.radius), width=2)
+                       (int(sx), int(sy)), int(node.radius), width=2)
 
-    draw_glow(surface, node.x, node.y, config.COLOR_NODE,
-              int(node.core_radius * (4 if is_active else 3)))
+    _glow_at(surface, sx, sy, config.COLOR_NODE,
+             int(node.core_radius * (4 if is_active else 3)))
     pygame.draw.circle(surface, config.COLOR_CORE,
-                       (int(node.x), int(node.y)), int(node.core_radius))
+                       (int(sx), int(sy)), int(node.core_radius))
 
 
 def draw_beam(surface: pygame.Surface, px: float, py: float, node,
-              charge: Charge, force_magnitude: float, force_max: float) -> None:
+              charge: Charge, force_magnitude: float, force_max: float,
+              camera) -> None:
     """Thickness and brightness track force magnitude, so the player reads
     F = k*r off the screen without ever being told it."""
     if charge is Charge.NEUTRAL:
@@ -136,21 +146,61 @@ def draw_beam(surface: pygame.Surface, px: float, py: float, node,
     width = max(1, int(1 + strength * 7))
     tint = _scaled(color, (60 + strength * 195) / 255.0)
 
+    ax, ay = camera.to_screen(px, py)
+    bx, by = camera.to_screen(node.x, node.y)
     pad = width + 2
-    rect = pygame.Rect(int(min(px, node.x)) - pad, int(min(py, node.y)) - pad,
-                       int(abs(node.x - px)) + 2 * pad,
-                       int(abs(node.y - py)) + 2 * pad)
+    rect = pygame.Rect(int(min(ax, bx)) - pad, int(min(ay, by)) - pad,
+                       int(abs(bx - ax)) + 2 * pad,
+                       int(abs(by - ay)) + 2 * pad)
     layer = _scratch_layer(surface.get_size(), rect)
-    pygame.draw.line(layer, tint, (px, py), (node.x, node.y), width)
+    pygame.draw.line(layer, tint, (ax, ay), (bx, by), width)
     _composite(surface, layer, rect)
 
 
-def draw_player(surface: pygame.Surface, x: float, y: float, radius: float) -> None:
-    draw_glow(surface, x, y, config.COLOR_PLAYER, int(radius * 5))
-    pygame.draw.circle(surface, config.COLOR_PLAYER, (int(x), int(y)), int(radius))
+def draw_player(surface: pygame.Surface, x: float, y: float, radius: float,
+                camera) -> None:
+    sx, sy = camera.to_screen(x, y)
+    _glow_at(surface, sx, sy, config.COLOR_PLAYER, int(radius * 5))
+    pygame.draw.circle(surface, config.COLOR_PLAYER, (int(sx), int(sy)), int(radius))
 
 
-def draw_trail(surface: pygame.Surface, points) -> None:
+def draw_chamber(surface: pygame.Surface, chamber, camera,
+                 is_current: bool) -> None:
+    """The corridor outline. Dim for neighbours, brighter for the one you are
+    in, so the seam is legible without a HUD element."""
+    points = [camera.to_screen(x, y) for x, y in chamber.outline()]
+    colour = _scaled(config.COLOR_CHAMBER, (42 if is_current else 18) / 255.0)
+    pygame.draw.lines(surface, colour, True, points, 2)
+
+
+def draw_arrow(surface: pygame.Surface, chamber, camera,
+               is_current: bool = True) -> None:
+    """The exit arrow spans the chamber's FULL far side, so it reads as a
+    threshold you cross rather than a target you aim at. Chevrons point along
+    next_direction, which is where gravity will pull once you are through."""
+    a, b = (camera.to_screen(*point) for point in chamber.arrow_endpoints())
+    pygame.draw.line(surface, _scaled(config.COLOR_ARROW,
+                                      (204 if is_current else 90) / 255.0),
+                     a, b, 3)
+
+    dx, dy = camera.direction_to_screen(*chamber.next_direction)
+    ux, uy = -dy, dx
+    colour = _scaled(config.COLOR_ARROW, (242 if is_current else 102) / 255.0)
+    width, height = surface.get_size()
+    half = chamber.params.half_width
+    for k in range(-2, 3):
+        cx, cy = camera.to_screen(*chamber.world(chamber.params.depth,
+                                                 k * half * 0.42))
+        if not (-60 <= cx <= width + 60 and -60 <= cy <= height + 60):
+            continue
+        pygame.draw.lines(surface, colour, False, [
+            (cx + ux * 13 - dx * 10, cy + uy * 13 - dy * 10),
+            (cx + dx * 10, cy + dy * 10),
+            (cx - ux * 13 - dx * 10, cy - uy * 13 - dy * 10),
+        ], 3)
+
+
+def draw_trail(surface: pygame.Surface, points, camera) -> None:
     """Fades from tail to head so orbit shape is legible as a drawn line.
 
     The fade is drawn in TRAIL_BANDS constant-brightness bands rather than
@@ -160,7 +210,7 @@ def draw_trail(surface: pygame.Surface, points) -> None:
     invisible at these alphas — consecutive segments differ by under two
     levels out of 255.
     """
-    points = tuple(points)
+    points = tuple(camera.to_screen(x, y) for x, y in points)
     total = len(points)
     if total < 2:
         return

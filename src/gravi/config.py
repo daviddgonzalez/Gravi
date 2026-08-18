@@ -25,6 +25,10 @@ COLOR_PLAYER = (255, 240, 120)
 COLOR_BEAM_ATTRACT = (80, 240, 255)
 COLOR_BEAM_REPEL = (255, 120, 200)
 COLOR_TRAIL = (120, 180, 255)
+COLOR_CHAMBER = (80, 240, 255)    # the corridor you are inside
+# Violet: hue is charge, and the exit arrow is not a charge, so it must not
+# borrow the node cyan or the repel magenta.
+COLOR_ARROW = (169, 123, 255)
 COLOR_HUD = (200, 220, 235)
 
 # Trail. Sampled every Nth physics step, not every step: at 240 Hz and 600
