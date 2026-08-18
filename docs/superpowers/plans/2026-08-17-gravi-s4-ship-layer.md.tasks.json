@@ -4,19 +4,19 @@
     {
       "id": 0,
       "subject": "Task 1: play slice 1 in the browser and write down what happened",
-      "status": "pending",
+      "status": "in_progress",
       "description": "**Goal:** Answer the open question slice 1 left: does the feel survive WebAssembly frame pacing? Do this BEFORE S1 merges.\n\n> **USER-ORDERED GATE \u2014 NON-SKIPPABLE.** This task was requested by the user in the current conversation. It MUST NOT be closed by walking around it, by declaring it \"verified inline\", or by substituting a cheaper check. Close only after every item in `acceptanceCriteria` has been re-validated independently, with output captured.\n\n**Files:**\n- Create: `docs/superpowers/runbooks/<date>-slice-1-browser-feel-check.md`\n- Modify: `docs/web-build.md` if the recipe rotted\n\n**Acceptance Criteria:**\n- [ ] pygbag --build completes and build/web/index.html exists\n- [ ] The build is PLAYED in a real browser for at least five minutes, chaining orbits \u2014 not booted and looked at\n- [ ] fps and physics-step saturation from the in-game overlay recorded as numbers\n- [ ] An explicit verdict on parity with native, and if worse, in what specific way\n- [ ] The runbook names the commit SHA tested\n\n**Verify:** The runbook exists and contains an fps number and a yes/no on parity with native\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"docs/superpowers/runbooks/\"], \"verifyCommand\": \"PYTHONPATH= .venv/bin/pygbag --build .\", \"userGate\": true, \"tags\": [\"user-gate\"], \"gateScope\": \"browser feel parity for the slice 1 build\", \"acceptanceCriteria\": [\"build exists\", \"played 5+ minutes in a real browser\", \"fps and step saturation recorded\", \"explicit parity verdict\", \"commit SHA named\"]}\n```"
     },
     {
       "id": 1,
       "subject": "Task 2: storage.py \u2014 persistence that cannot crash the browser",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** One module that saves and loads small JSON blobs, backed by the filesystem natively and localStorage in the browser, and never raises.\n\n**Files:**\n- Create: `src/gravi/storage.py`\n- Test: `tests/test_storage.py`\n\n**Acceptance Criteria:**\n- [ ] save(key, obj) -> bool and load(key, default) -> Any; save returns False rather than raising\n- [ ] Backend chosen at import: localStorage when sys.platform == 'emscripten', else a JSON file\n- [ ] The backend is injectable so tests touch neither disk nor browser\n- [ ] A corrupt stored value loads as the default instead of raising\n- [ ] Keys are namespaced gravi.<key>\n- [ ] No pygame import\n\n**Verify:** `PYTHONPATH= .venv/bin/pytest tests/test_storage.py tests/test_purity.py -v` -> all pass\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/storage.py\", \"tests/test_storage.py\"], \"verifyCommand\": \"PYTHONPATH= .venv/bin/pytest tests/test_storage.py tests/test_purity.py -v\", \"acceptanceCriteria\": [\"round trips\", \"fails soft on write errors\", \"corrupt value -> default\", \"namespaced keys\", \"injectable backend\"]}\n```"
     },
     {
       "id": 2,
       "subject": "Task 3: a repeatable build and a headless perf probe",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** One command builds the web target from clean; one command reports frame cost without a display.\n\n**Files:**\n- Create: `tools/build_web.sh`, `tools/perf_probe.py`\n- Test: `tests/test_perf_probe.py`\n\n**Acceptance Criteria:**\n- [ ] build_web.sh builds into build/web/, exits non-zero on failure, prints output size\n- [ ] perf_probe.py runs N frames with SDL_VIDEODRIVER=dummy and prints mean and p95 frame cost in ms\n- [ ] --frames and --seed flags; deterministic\n- [ ] The probe measures the draw path, not only the simulation\n- [ ] No dependencies outside pyproject.toml\n\n**Verify:** `PYTHONPATH= SDL_VIDEODRIVER=dummy .venv/bin/python tools/perf_probe.py --frames 600 --seed 1` -> prints mean/p95, exits 0\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"tools/build_web.sh\", \"tools/perf_probe.py\"], \"verifyCommand\": \"PYTHONPATH= SDL_VIDEODRIVER=dummy .venv/bin/python tools/perf_probe.py --frames 600 --seed 1\", \"acceptanceCriteria\": [\"build script works\", \"probe prints mean and p95\", \"deterministic\", \"measures the draw path\"]}\n```",
       "blockedBy": [
         0
@@ -25,7 +25,7 @@
     {
       "id": 3,
       "subject": "Task 4: CI",
-      "status": "pending",
+      "status": "completed",
       "description": "**Goal:** Every push runs the suite and proves the web build still packages.\n\n**Files:**\n- Create: `.github/workflows/ci.yml`\n\n**Acceptance Criteria:**\n- [ ] Job 1: pytest on Python 3.12 with PYTHONPATH explicitly emptied\n- [ ] Job 2: pygbag --build succeeds and uploads build/web/ as an artifact\n- [ ] Runs on push to main and on pull requests\n- [ ] Under five minutes wall clock, with the pygbag CDN cache cached between runs\n\n**Verify:** Push a branch; both jobs green\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\".github/workflows/ci.yml\"], \"verifyCommand\": \"gh run list --limit 1\", \"acceptanceCriteria\": [\"suite job green\", \"packaging job green\", \"runs on push and PR\", \"under five minutes\"]}\n```",
       "blockedBy": [
         2
@@ -34,12 +34,12 @@
     {
       "id": 4,
       "subject": "Task 5: deploy the browser build",
-      "status": "pending",
+      "status": "in_progress",
       "description": "**Goal:** The game is playable from a URL.\n\n**Files:**\n- Create: `.github/workflows/deploy.yml`\n- Modify: `README.md`, `docs/web-build.md`\n\n**Acceptance Criteria:**\n- [ ] Pushing to main publishes build/web/ to GitHub Pages\n- [ ] The published page loads and PLAYS in a browser \u2014 verified by opening it, not by a green workflow\n- [ ] README links to it\n- [ ] Cache busting prevents the stale gravi.apk problem\n\n**Verify:** Open the published URL; the canvas turns near-black and the game responds to input\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\".github/workflows/deploy.yml\", \"README.md\"], \"verifyCommand\": \"gh run list --limit 1\", \"acceptanceCriteria\": [\"Pages publish on push\", \"page actually plays\", \"README links it\", \"no stale build served\"]}\n```",
       "blockedBy": [
         3
       ]
     }
   ],
-  "lastUpdated": "2026-08-17"
+  "lastUpdated": "2026-08-17T22:30:00Z"
 }
