@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A second push to the same branch makes the first run's answer worthless.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: Test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Emptied on purpose. A ROS install on the author's machine puts its own
+      # site-packages ahead of the venv and pytest dies before collection; any
+      # runner with system Python packages can do the same. Setting it here
+      # rather than per-step means no step can forget.
+      PYTHONPATH: ""
+      # No display on a runner. pygame's video subsystem still has to
+      # initialise for the renderer tests and the perf probe.
+      SDL_VIDEODRIVER: dummy
+      SDL_AUDIODRIVER: dummy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Run the suite
+        run: pytest -q
+
+      - name: Frame cost
+        # Not a gate: runner hardware is shared and noisy, so a threshold here
+        # would fail for reasons that say nothing about Gravi. It is recorded
+        # so a regression is visible in the log when someone goes looking.
+        run: python tools/perf_probe.py --frames 600 --seed 1 | tee -a "$GITHUB_STEP_SUMMARY"
+
+  web-build:
+    name: Web build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Cache the pygbag CDN template
+        # The template and runtime are fetched from pygame-web.github.io on a
+        # cold build and are the slowest part of it. Keyed on the pygbag
+        # version, since that is what decides which template is fetched.
+        uses: actions/cache@v4
+        with:
+          path: build/web-cache
+          key: pygbag-cdn-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pygbag-cdn-${{ runner.os }}-
+
+      - name: Build
+        run: ./tools/build_web.sh
+
+      - name: Check the package actually contains the game
+        # A green pygbag run is not evidence the package is right: the build
+        # walks a directory and will happily ship one missing main.py or a
+        # src/ that never made it in. That failure shows up in a browser as a
+        # grey screen, which is exactly the bug docs/web-build.md was written
+        # about. Cheap to catch here instead.
+        run: |
+          set -euo pipefail
+          apk="$(find build/web -maxdepth 1 -name '*.apk' -print -quit)"
+          test -n "$apk"
+          python - "$apk" <<'PY'
+          import sys, zipfile
+          names = zipfile.ZipFile(sys.argv[1]).namelist()
+          required = ["main.py", "src/gravi/sim.py", "rooms/slice1.json"]
+          missing = [r for r in required if not any(n.endswith(r) for n in names)]
+          if missing:
+              print("missing from the package:", missing)
+              sys.exit(1)
+          print(f"package holds {len(names)} entries, all required files present")
+          PY
+
+      - name: Upload build/web
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: build/web/
+          if-no-files-found: error
