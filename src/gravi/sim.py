@@ -10,6 +10,15 @@ is a harmonic oscillator, and symplectic integrators do not pump energy into
 oscillators the way explicit Euler does, so orbits stay stable instead of
 spiralling outward.
 
+Slice 2 runs this on a streamed chamber chain rather than one hand-authored
+room, and gravity became a rotating vector rather than a downward scalar. The
+speed clamp moved with it: "fall" and "carry" are now measured along and
+across the CURRENT gravity direction, because leaving the clamp in world axes
+would silently undo slice 1's carry fix the moment the player is sideways.
+
+World coordinates never rotate. The camera rotates at draw time instead, so
+the offline validator simulates exactly the numbers the game does (spec 8.1).
+
 Never import pygame here (see tests/test_purity.py).
 """
 
@@ -17,27 +26,30 @@ from __future__ import annotations
 
 import math
 
+from .chamber import ChamberChain
 from .config import PHYS_DT
 from .field import Charge, FieldParams, Node, charge_force
-from .room import Room
+from .gravity import QUARTER, GravityState
 
 
 class World:
-    """Mutable simulation state for one attempt at a room."""
+    """Mutable simulation state for one run through a chamber chain."""
 
     def __init__(
         self,
-        room: Room,
+        chain: ChamberChain,
         params: FieldParams,
-        gravity_y: float,
+        gravity: float,
+        gravity_state: GravityState,
         player_radius: float,
         speed_max: float,
         fall_speed_max: float = math.inf,
         dt: float = PHYS_DT,
     ) -> None:
-        self.room = room
+        self.chain = chain
         self.params = params
-        self.gravity_y = gravity_y
+        self.gravity = gravity          # magnitude; direction lives in gravity_state
+        self.gravity_state = gravity_state
         self.player_radius = player_radius
         self.speed_max = speed_max
         self.fall_speed_max = fall_speed_max
@@ -49,43 +61,61 @@ class World:
         self.vy = 0.0
         self.dead = False
         self.elapsed = 0.0
-        self._latch_index: int | None = None
+        self.distance = 0.0
+        self.cleared = 0
+        self._latch: tuple[int, int] | None = None
         self.reset()
 
     def reset(self) -> None:
-        self.x, self.y = self.room.spawn
+        """Spawn just inside the current chamber's entrance, with gravity
+        already settled onto that chamber's direction — a run must never open
+        mid-flip."""
+        ch = self.chain.current
+        self.x, self.y = ch.world(60.0, 0.0)
         self.vx = 0.0
         self.vy = 0.0
         self.dead = False
         self.elapsed = 0.0
-        self._latch_index = None
+        self.distance = 0.0
+        self.cleared = 0
+        self._latch = None
+        self.gravity_state.settle(
+            round(math.atan2(ch.direction[0], ch.direction[1]) / QUARTER))
 
-    def active_node(self) -> Node | None:
-        """Nearest node whose influence radius contains the player. Ties break
-        on lowest index so the choice is deterministic. Overlapping fields
-        producing a net force is a deliberate late-game escalation (spec 3.6),
-        not a slice 1 feature."""
-        best: Node | None = None
+    def _nearest(self) -> tuple[tuple[int, int], Node] | None:
+        """Nearest node whose influence radius contains the player, addressed
+        by (chamber index, node index). Ties break on the lowest index so the
+        choice is deterministic. Overlapping fields producing a net force is a
+        deliberate late-game escalation (spec 3.6), not a slice 1 feature."""
+        best: tuple[tuple[int, int], Node] | None = None
         best_distance = math.inf
-        for node in self.room.nodes:
+        for chamber_index, node_index, node in self.chain.nodes_near():
             distance = math.hypot(node.x - self.x, node.y - self.y)
             if distance <= node.radius and distance < best_distance:
-                best = node
+                best = ((chamber_index, node_index), node)
                 best_distance = distance
         return best
 
+    def active_node(self) -> Node | None:
+        found = self._nearest()
+        return None if found is None else found[1]
+
     def latched_node(self) -> Node | None:
-        """The node currently roped to, or None. Tracked by index rather than
-        by value because `Node` is frozen and compares by value: the editor
-        replaces a node in place when you drag it, and the rope must follow
-        the node to its new position instead of pointing at a stale copy."""
-        if self._latch_index is None:
+        """The node currently roped to, or None. Tracked by (chamber, node)
+        index rather than by value because `Node` is frozen and compares by
+        value: the editor replaces a node in place when you drag it, and the
+        rope must follow the node to its new position instead of pointing at a
+        stale copy. The chamber index also lets a rope survive right up to the
+        moment its chamber is culled behind the player."""
+        if self._latch is None:
             return None
-        if self._latch_index >= len(self.room.nodes):
-            # The editor deleted it out from under us.
-            self._latch_index = None
+        chamber_index, node_index = self._latch
+        chamber = self.chain.by_index(chamber_index)
+        if chamber is None or node_index >= len(chamber.nodes):
+            # Culled behind us, or the editor deleted it out from under us.
+            self._latch = None
             return None
-        return self.room.nodes[self._latch_index]
+        return chamber.nodes[node_index]
 
     def _within(self, node: Node) -> bool:
         return math.hypot(node.x - self.x, node.y - self.y) <= node.radius
@@ -112,7 +142,7 @@ class World:
         to be released first.
         """
         if charge is Charge.NEUTRAL:
-            self._latch_index = None
+            self._latch = None
             return None
 
         current = self.latched_node()
@@ -121,21 +151,25 @@ class World:
                 return current
             # Pushed itself out of range: drop it and fall through, so an
             # overlapping ring can pick the push up on the same step.
-            self._latch_index = None
+            self._latch = None
 
-        node = self.active_node()
-        if node is None:
+        found = self._nearest()
+        if found is None:
             return None
-        self._latch_index = self.room.nodes.index(node)
+        self._latch, node = found
         return node
 
     def step(self, charge: Charge) -> None:
-        """Advance one fixed timestep. No-op once dead."""
+        """Advance one fixed timestep. Gravity keeps easing once dead, so the
+        death screen settles upright instead of freezing mid-turn."""
+        self.gravity_state.advance(self.dt)
         if self.dead:
             return
 
-        ax = 0.0
-        ay = self.gravity_y  # mass is fixed at 1.0, so force == acceleration
+        gx, gy = self.gravity_state.direction()
+        # Mass is fixed at 1.0, so force == acceleration.
+        ax = gx * self.gravity
+        ay = gy * self.gravity
 
         node = self._update_latch(charge)
         if node is not None:
@@ -150,35 +184,71 @@ class World:
         self.vx += ax * self.dt
         self.vy += ay * self.dt
 
-        # Horizontal and downward speed are bounded separately, never as one
-        # |v| clamp. An isotropic clamp rescales the whole vector, so the
-        # downward velocity gravity keeps adding gets paid for out of the
-        # player's horizontal velocity — every swing bleeds its carry while
-        # total speed sits pinned at the cap. Upward speed is left uncapped
-        # so a slingshot can still fling.
-        if abs(self.vx) > self.speed_max:
-            self.vx = math.copysign(self.speed_max, self.vx)
-        if self.vy > self.fall_speed_max:
-            self.vy = self.fall_speed_max
+        # Fall and carry speed are bounded separately, never as one |v| clamp,
+        # and in GRAVITY-RELATIVE axes. An isotropic clamp rescales the whole
+        # vector, so the velocity gravity keeps adding gets paid for out of the
+        # player's carry — every swing bleeds it while total speed sits pinned
+        # at the cap. Speed against gravity is left uncapped so a slingshot can
+        # still fling.
+        px, py = gy, -gx
+        fall = self.vx * gx + self.vy * gy
+        carry = self.vx * px + self.vy * py
+        if fall > self.fall_speed_max:
+            fall = self.fall_speed_max
+        if abs(carry) > self.speed_max:
+            carry = math.copysign(self.speed_max, carry)
+        self.vx = fall * gx + carry * px
+        self.vy = fall * gy + carry * py
 
-        self.x += self.vx * self.dt
-        self.y += self.vy * self.dt
+        nx = self.x + self.vx * self.dt
+        ny = self.y + self.vy * self.dt
+        self.distance += math.hypot(nx - self.x, ny - self.y)
+        self.x, self.y = nx, ny
         self.elapsed += self.dt
 
-        self._check_death()
+        self._check_bounds()
+        if not self.dead:
+            self._check_cores()
 
-    def _check_death(self) -> None:
-        for node in self.room.nodes:
+    def _check_bounds(self) -> None:
+        ch = self.chain.current
+        t, u = ch.local(self.x, self.y)
+        if t >= ch.params.depth:
+            # Land exactly on the arrow plane rather than wherever the step
+            # happened to overshoot to. Velocity is constant across a step, so
+            # backing up along it is the exact crossing point, and it is what
+            # makes spec 4.3 hold to the letter: the offset you crossed at
+            # becomes your entry depth next door, and your entry offset there
+            # is zero rather than a leftover fraction of a step.
+            into = self.vx * ch.direction[0] + self.vy * ch.direction[1]
+            if into > 0.0:
+                back = (t - ch.params.depth) / into
+                self.x -= self.vx * back
+                self.y -= self.vy * back
+                self.distance -= math.hypot(self.vx * back, self.vy * back)
+                t, u = ch.local(self.x, self.y)
+            if abs(u) > ch.params.half_width:
+                self.dead = True            # left past the side, not through the arrow
+                return
+            # rot() carries a direction at angle phi to phi - a, so gravity
+            # turns by the NEGATIVE of the corridor's geometric turn. Getting
+            # this backwards spins the world the wrong way on every flip, which
+            # looks almost right — which is how it survived a playtest once.
+            self.gravity_state.flip_by(-ch.turn)
+            self.chain.advance()
+            self.cleared += 1
+            self._latch = None              # no handoff across the seam
+        elif abs(u) > ch.params.half_width + ch.params.side_grace:
+            self.dead = True
+        elif t < -600.0:
+            self.dead = True                # thrown back out of the entrance
+
+    def _check_cores(self) -> None:
+        for _, _, node in self.chain.nodes_near():
             lethal = node.core_radius + self.player_radius
             if math.hypot(node.x - self.x, node.y - self.y) <= lethal:
                 self.dead = True
                 return
-
-        margin = 200.0  # let the player leave the frame briefly and recover
-        if not (-margin <= self.x <= self.room.width + margin):
-            self.dead = True
-        elif not (-margin <= self.y <= self.room.height + margin):
-            self.dead = True
 
 
 def charge_from_input(attract_held: bool, repel_held: bool) -> Charge:
