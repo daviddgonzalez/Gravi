@@ -1,0 +1,96 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  # So a branch can be published and opened in a real browser before it is
+  # merged. A green workflow is not evidence the page works — see the grey
+  # vs near-black note in docs/web-build.md.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and let a running one finish: cancelling mid-publish
+# can leave the site serving a half-uploaded build.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONPATH: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -e ".[dev]"
+
+      - name: Cache the pygbag CDN template
+        uses: actions/cache@v4
+        with:
+          path: build/web-cache
+          key: pygbag-cdn-${{ runner.os }}-${{ hashFiles('pyproject.toml') }}
+          restore-keys: pygbag-cdn-${{ runner.os }}-
+
+      - name: Build
+        run: ./tools/build_web.sh
+
+      - name: Bust the archive cache
+        # The payload is fetched by name from inside index.html, and the name
+        # never changes between builds, so a browser holding the previous one
+        # replays the previous game — the same stale-archive trap that bites
+        # locally, just with a Pages cache instead of a dev server.
+        #
+        # Only the two platform.fopen() call sites are rewritten. That
+        # argument is used purely as a fetch URL (aio.filelike.fopen passes it
+        # through fix_url and writes the response to its own mktemp file), so
+        # a query suffix cannot confuse the unpacker. The `bundle` and
+        # `archive` names, which DO become paths, are left alone.
+        run: |
+          set -euo pipefail
+          # '#' as the delimiter, not '|': the alternation inside the group
+          # needs the pipe.
+          sed -i -E 's#platform\.fopen\("([^"]+\.(apk|tar\.gz))"#platform.fopen("\1?v=${{ github.sha }}"#g' build/web/index.html
+          echo "rewritten fetch URLs:"
+          grep -o 'platform\.fopen("[^"]*"' build/web/index.html
+          # A typo in the expression above would silently rewrite nothing, and
+          # the deploy would look fine while fixing nothing.
+          grep -q "?v=${{ github.sha }}" build/web/index.html
+
+      - name: Do not let Pages strip the build
+        # Pages runs the upload through Jekyll unless told not to, and Jekyll
+        # drops files and folders beginning with an underscore.
+        run: touch build/web/.nojekyll
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: build/web
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Say where it went
+        run: echo "Published to ${{ steps.deployment.outputs.page_url }}" >> "$GITHUB_STEP_SUMMARY"
