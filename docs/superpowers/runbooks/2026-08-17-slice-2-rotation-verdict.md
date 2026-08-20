@@ -76,7 +76,7 @@ defaults, which are the prototype's tuned values:
 | `chamber_depth` | 1600.0 | ~8 gravity swaps/minute in the prototype (1150 gave ~26 and read as too hard) |
 | `chamber_half_width` | 460.0 | Untuned, straight from the prototype |
 | `gravity` | 500.0 | Renamed from `gravity_y`; a magnitude now |
-| `view_width` | 1280.0 | 1:1, i.e. the framing before amendment A2. Untuned |
+| `view_width` | 2200.0 | Provisional. 1:1 (1280) was reported as not showing enough corridor ahead to plan against, twice, during the playtest; raised to 2200 and bound to `-`/`=` so the sweep can happen while flying. Still unsettled |
 | `camera_lead` | 0.12 | Was a hard-coded constant; rotating camera only |
 
 Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,

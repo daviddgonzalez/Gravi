@@ -95,7 +95,12 @@ TUNABLES: dict[str, TunableSpec] = {
     # screen-up so more of the fall ahead is on screen. The fixed camera is
     # centred and stays centred (amendment A1), so widening the view is the
     # only way it gets more room ahead.
-    "view_width":     TunableSpec(1280.0, 80.0,  640.0, 3200.0),
+    # The default is deliberately NOT 1:1. At 1280 a centred player has ~360
+    # world units of corridor ahead, which is under a quarter of a chamber —
+    # enough to react to a node, not enough to plan a route through one. 2200
+    # puts ~620 ahead. It is a starting point for the playtest sweep, not a
+    # settled value.
+    "view_width":     TunableSpec(2200.0, 80.0,  640.0, 4800.0),
     "camera_lead":    TunableSpec(0.12,   0.02,   0.0,     0.40),
 }
 

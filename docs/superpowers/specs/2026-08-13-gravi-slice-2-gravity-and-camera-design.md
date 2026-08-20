@@ -63,7 +63,13 @@ block on it being as good as the rotating camera.
 >
 > 1. **`view_width`** — how many world units fit across the window, so a bigger
 >    number sees more. 1280 against a 1280px window is the 1:1 framing slice 2
->    shipped with. This is the FOV control for **both** cameras.
+>    shipped with. This is the FOV control for **both** cameras, and it is bound
+>    to its own keys (`-` widens, `=` narrows) rather than living only in the
+>    overlay, because it is adjusted while flying. **The game does not open at
+>    1:1**: 1:1 leaves a centred player ~360 world units of corridor ahead,
+>    under a quarter of a chamber, which is enough to react to a node and not
+>    enough to plan a route through one. It opens at 2200 (~620 ahead) pending
+>    the sweep.
 > 2. **`camera_lead`** — replaces the hard-coded 0.12 lead, and reaches the
 >    **rotating camera only**.
 >

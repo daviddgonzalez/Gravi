@@ -31,9 +31,15 @@ def test_the_field_of_view_knobs_are_tunable():
     """Sweeping how far ahead you can see is the point; both are draw-time
     only, so neither may be something the chain is rebuilt from."""
     view = config.TUNABLES["view_width"]
-    assert view.default == float(config.WINDOW_WIDTH)   # 1:1 out of the box
-    assert view.hi >= 2560.0
-    assert view.lo <= float(config.WINDOW_WIDTH)
+    assert view.hi >= 4000.0
+    assert view.lo <= float(config.WINDOW_WIDTH)   # 1:1 is still reachable
     lead = config.TUNABLES["camera_lead"]
     assert lead.lo == 0.0
     assert lead.hi <= 0.5
+
+
+def test_the_game_does_not_open_at_one_to_one():
+    """1:1 puts barely 360 world units ahead of a centred player, which is not
+    enough corridor to plan a grab against — the reason the knob exists at all.
+    Opening at it means the knob may as well not be there."""
+    assert config.TUNABLES["view_width"].default > float(config.WINDOW_WIDTH)

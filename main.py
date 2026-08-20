@@ -152,6 +152,16 @@ async def main() -> None:
                     status = ("camera: rotating" if rotating_camera
                               else "camera: fixed")
                     status_timer = STATUS_DURATION
+                elif event.key in (pygame.K_MINUS, pygame.K_KP_MINUS,
+                                   pygame.K_EQUALS, pygame.K_PLUS,
+                                   pygame.K_KP_PLUS):
+                    # Field of view gets its own keys rather than a row in the
+                    # overlay, because it is adjusted while flying. Map
+                    # convention: MINUS zooms out, i.e. sees further ahead.
+                    wider = event.key in (pygame.K_MINUS, pygame.K_KP_MINUS)
+                    tuning.nudge("view_width", +1 if wider else -1, fast=shift)
+                    status = f"view {int(tunables['view_width'])}"
+                    status_timer = STATUS_DURATION
                 elif event.key == pygame.K_TAB:
                     show_hud = not show_hud
                 elif event.key == pygame.K_UP:
