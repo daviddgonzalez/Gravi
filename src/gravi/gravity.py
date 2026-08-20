@@ -108,6 +108,37 @@ def apply_gravity(mode: GravityMode, direction: Vec, vx: float, vy: float,
     return (vx * c - vy * s, vx * s + vy * c)
 
 
+def gravity_force(mode: GravityMode, direction: Vec, vx: float, vy: float,
+                  magnitude: float) -> Vec:
+    """Gravity as an ACCELERATION VECTOR, for callers that must not have their
+    whole velocity rotated out from under them.
+
+    `apply_gravity` returns a finished velocity because PERP_VELOCITY is a
+    rotation, and a rotation is the only way to keep that mode from pumping
+    speed in. But a rotation composes badly with a constraint: rotating the
+    velocity about the origin injects a component that is radial relative to a
+    rope's anchor, the rope strips it, and two individually speed-preserving
+    operations leak energy together — measured at 260 -> 10 px/s over 70
+    seconds on a held rope. So a constrained caller takes the force form and
+    lets its own constraint absorb whatever part it must.
+    """
+    mode = GravityMode(mode)
+    gx, gy = direction
+    if mode is GravityMode.ALONG:
+        return (gx * magnitude, gy * magnitude)
+
+    if mode is GravityMode.PERP_CORRIDOR:
+        return (-gy * magnitude, gx * magnitude)
+
+    speed = math.hypot(vx, vy)
+    if speed == 0.0:
+        # Perpendicular to nothing is undefined, and a stopped player has
+        # nothing else to get them moving again — same threshold, same
+        # reason, as apply_gravity's own PERP_VELOCITY fallback.
+        return (gx * magnitude, gy * magnitude)
+    return (-vy / speed * magnitude, vx / speed * magnitude)
+
+
 class GravityState:
     """Eased quarter-turn gravity. `angle` is the only float that moves."""
 

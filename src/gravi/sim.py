@@ -29,7 +29,19 @@ import math
 from .chamber import ChamberChain
 from .config import PHYS_DT
 from .field import Charge, FieldParams, Node, charge_force
-from .gravity import QUARTER, GravityMode, GravityState, apply_gravity
+from .gravity import QUARTER, GravityMode, GravityState, apply_gravity, gravity_force
+
+# _rotate_on_rope's radius appears in two denominators: the unit radial
+# direction (dx / r, dy / r) and the angular rate (speed / r). That makes a
+# degenerate radius more dangerous here than field.charge_force's own
+# near-zero guard (field._EPSILON, 1e-9) — that guard only protects a force
+# that force_max separately caps, but there is no cap on an angular rate, so
+# even a radius as "small" as 1e-6 turns one physics step into on the order
+# of a million radians, aliasing the position to an effectively arbitrary
+# point on the circle rather than merely raising. This needs a threshold
+# several orders of magnitude larger than field's, so it is its own constant
+# rather than a reuse of field._EPSILON.
+_ROPE_RADIUS_EPSILON = 1e-3
 
 
 class World:
@@ -197,8 +209,23 @@ class World:
         # the spring is NOT applied on top: two mechanisms pulling on one
         # radius would just fight.
 
-        self.vx, self.vy = apply_gravity(self.gravity_mode, (gx, gy),
-                                         self.vx, self.vy, self.gravity, self.dt)
+        if rigid:
+            # A rigid rope is a constraint, not a spring: apply_gravity's
+            # PERP_VELOCITY branch is a rotation of the WHOLE velocity vector
+            # about the origin, and that rotation injects a component that is
+            # radial relative to the node. _rotate_on_rope strips exactly that
+            # component every step, and two individually speed-preserving
+            # operations composed leak energy — measured 260 -> 10 px/s over
+            # 70 seconds before this fix. gravity_force instead returns an
+            # ACCELERATION, so the rope's own strip is the only thing that
+            # gets to decide what survives.
+            fx, fy = gravity_force(self.gravity_mode, (gx, gy),
+                                   self.vx, self.vy, self.gravity)
+            self.vx += fx * self.dt
+            self.vy += fy * self.dt
+        else:
+            self.vx, self.vy = apply_gravity(self.gravity_mode, (gx, gy),
+                                             self.vx, self.vy, self.gravity, self.dt)
 
         # Fall and carry speed are bounded separately, never as one |v| clamp,
         # and in GRAVITY-RELATIVE axes. An isotropic clamp rescales the whole
@@ -221,6 +248,10 @@ class World:
         else:
             nx = self.x + self.vx * self.dt
             ny = self.y + self.vy * self.dt
+        # Chord length, not arc length, even on a rigid rope: the relative
+        # error is theta**2/24, negligible at the theta ~0.01 rad/step this
+        # sim runs at — the same class of approximation this file already
+        # makes everywhere else (see e.g. semi-implicit Euler's own error).
         self.distance += math.hypot(nx - self.x, ny - self.y)
         self.x, self.y = nx, ny
         self.elapsed += self.dt
@@ -232,7 +263,16 @@ class World:
     def _update_rope(self, node: Node | None, rigid: bool) -> None:
         """Record the radius at the moment of the grab, and forget it the
         moment the rope is gone. Keyed on the latch, so re-grabbing a different
-        node measures a new radius rather than inheriting the old one."""
+        node measures a new radius rather than inheriting the old one.
+
+        Editor-only gap: if the editor deletes a node and a different node
+        reuses its (chamber, node) index, this stays keyed on that index and
+        the rope keeps rotating around the new node at the old, now-stale
+        radius until release. Unlike the spring path, which recovers the true
+        distance every frame, the rigid path has no such self-correction. Not
+        worth machinery for — it can only happen while editing, never during
+        a run.
+        """
         if not rigid:
             self._rope = None
             self._rope_radius = None
@@ -263,6 +303,15 @@ class World:
         `test_a_rigid_rope_strips_the_radial_velocity`) and does no work.
         """
         r = self._rope_radius
+        if r < _ROPE_RADIUS_EPSILON:
+            # Grabbed exactly at (or minutely off) the node's centre. The
+            # radius is meaningless at this scale, so treat the rope as
+            # inert this step rather than dividing by it: leave position and
+            # velocity exactly as they arrived, no rotation, no strip. A
+            # grab this close is inside every node's lethal core anyway, so
+            # the death check on the very next step is how this actually
+            # resolves — it just must not do it via an exception.
+            return self.x, self.y
         dx = self.x - node.x
         dy = self.y - node.y
         ux, uy = dx / r, dy / r

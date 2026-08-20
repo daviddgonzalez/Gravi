@@ -8,6 +8,7 @@ from gravi.gravity import (
     GravityState,
     apply_gravity,
     ease_in_out,
+    gravity_force,
 )
 
 
@@ -194,6 +195,44 @@ def test_string_mode_dispatches_correctly():
 def test_unknown_mode_string_raises():
     with pytest.raises(ValueError):
         apply_gravity("sideways", (0.0, 1.0), 30.0, 0.0, 500.0, 1.0 / 240.0)
+
+
+def test_gravity_force_along_is_the_scaled_direction():
+    v = gravity_force(GravityMode.ALONG, (0.0, 1.0), 30.0, 0.0, 500.0)
+    assert v == pytest.approx((0.0, 500.0))
+
+
+def test_gravity_force_perp_corridor_matches_apply_gravitys_handedness():
+    v = gravity_force(GravityMode.PERP_CORRIDOR, (0.0, 1.0), 0.0, 0.0, 500.0)
+    assert v == pytest.approx((-500.0, 0.0))
+
+
+def test_gravity_force_perp_velocity_is_perpendicular_to_velocity():
+    """Same handedness as apply_gravity's rotation: (-vy, vx) normalised."""
+    vx, vy = 300.0, 400.0                       # speed 500, a nice 3-4-5
+    fx, fy = gravity_force(GravityMode.PERP_VELOCITY, (0.0, 1.0), vx, vy, 500.0)
+    assert (fx, fy) == pytest.approx((-400.0, 300.0))
+    # Perpendicular to velocity by construction: the dot product is ~0.
+    assert fx * vx + fy * vy == pytest.approx(0.0, abs=1e-9)
+
+
+def test_gravity_force_perp_velocity_falls_back_when_stationary():
+    """Perpendicular to nothing is undefined, and a stopped player has
+    nothing else to get them moving again -- same threshold, same reason, as
+    apply_gravity's own PERP_VELOCITY fallback."""
+    v = gravity_force(GravityMode.PERP_VELOCITY, (0.0, 1.0), 0.0, 0.0, 500.0)
+    assert v == pytest.approx((0.0, 500.0))
+
+
+def test_gravity_force_string_mode_dispatches_correctly():
+    by_member = gravity_force(GravityMode.ALONG, (0.0, 1.0), 30.0, 0.0, 500.0)
+    by_string = gravity_force("along", (0.0, 1.0), 30.0, 0.0, 500.0)
+    assert by_string == pytest.approx(by_member)
+
+
+def test_gravity_force_unknown_mode_string_raises():
+    with pytest.raises(ValueError):
+        gravity_force("sideways", (0.0, 1.0), 30.0, 0.0, 500.0)
 
 
 def test_modes_cycle_with_wraparound():

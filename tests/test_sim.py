@@ -600,11 +600,71 @@ def test_a_rigid_rope_is_uniform_circular_motion():
     assert radii[0] == pytest.approx(100.0)
 
 
-def test_a_rigid_rope_strips_the_radial_velocity():
+def test_a_rigid_rope_at_the_nodes_exact_centre_does_not_crash():
+    """Finding 1: grabbing a rigid rope exactly at the node's centre gives
+    _rope_radius == 0, and _rotate_on_rope divides by it (dx / r, dy / r).
+    The player would die on core contact at that position anyway (distance 0
+    is inside any node's lethal core), but a crash is not an acceptable way
+    to get there."""
     node = Node(400.0, 400.0, 400.0, 5.0)
-    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(400.0, 400.0))
     w.rigid_rope = True
-    w.vx, w.vy = 200.0, 0.0                    # straight at the node
+    w.vx, w.vy = 10.0, 0.0
+
+    w.step(Charge.ATTRACT)          # must not raise ZeroDivisionError
+
+    assert w.dead   # exactly at the centre is inside the node's lethal core
+
+
+def test_a_rigid_rope_at_a_near_zero_radius_does_not_alias():
+    """A radius that is not exactly zero but close (~1e-6) is nearly as bad:
+    theta = (speed / r) * dt balloons to somewhere around 1e6 rad/step, and
+    cos/sin of that alias the position to an effectively arbitrary point on
+    the circle rather than raising. Below the guard epsilon the rope must be
+    inert for that step -- position and velocity carry over unchanged --
+    rather than rotate by a meaningless theta.
+
+    core_radius and player_radius are pinned to 0 here so the death check
+    does not short-circuit the observation; this test is about the rope math,
+    not the core."""
+    node = Node(400.0, 400.0, 400.0, 0.0)
+    spawn = (400.0 + 1e-6, 400.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=spawn)
+    w.player_radius = 0.0
+    w.rigid_rope = True
+    w.vx, w.vy = 10.0, 0.0
+
+    w.step(Charge.ATTRACT)          # must not raise, must not alias
+
+    assert not w.dead
+    assert (w.x, w.y) == spawn
+    assert (w.vx, w.vy) == pytest.approx((10.0, 0.0))
+
+
+def test_a_rigid_rope_strips_the_radial_velocity():
+    """The previous version of this test placed the node on the x-axis with a
+    purely radial velocity (200, 0) -- vy was 0 both before and after the
+    strip, so a sign error in `radial = vx*ux - vy*uy` would have passed
+    unnoticed (0 == 0 either way). This version uses an off-axis 80-60-100
+    triangle so the radial and tangential components are both nonzero and
+    different.
+
+    Player sits at node + (-80, -60), so the radial unit vector is
+    u = (-0.8, -0.6) and its perpendicular (same handedness as chamber.perp,
+    perp(u) = (-uy, ux)) is t = (0.6, -0.8). Composing
+    velocity = 150 * u + 80 * t:
+        vx = 150*(-0.8) + 80*(0.6)  = -72
+        vy = 150*(-0.6) + 80*(-0.8) = -154
+    with speed sqrt(150**2 + 80**2) == 170, confirmed independently by
+    sqrt(72**2 + 154**2) == 170. Stripping the 150 px/s radial part must
+    leave exactly the 80 px/s tangential part -- checked both by the radial
+    projection going to ~0 and by the surviving speed matching 80 exactly
+    (rotation about the node preserves speed, so no further tolerance is
+    needed there)."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(320.0, 340.0))
+    w.rigid_rope = True
+    w.vx, w.vy = -72.0, -154.0
 
     w.step(Charge.ATTRACT)
 
@@ -612,6 +672,7 @@ def test_a_rigid_rope_strips_the_radial_velocity():
     distance = math.hypot(dx, dy)
     radial = (w.vx * dx + w.vy * dy) / distance
     assert radial == pytest.approx(0.0, abs=1e-9)
+    assert math.hypot(w.vx, w.vy) == pytest.approx(80.0)
 
 
 def test_releasing_a_rigid_rope_restores_free_flight():
@@ -654,6 +715,63 @@ def test_perp_velocity_mode_does_not_feed_the_player_speed():
             break
 
     assert math.hypot(w.vx, w.vy) == pytest.approx(start, rel=1e-6)
+
+
+def test_a_rigid_rope_under_perp_velocity_does_not_leak_speed():
+    """Finding 2, the regression test for the leak. Measured before the fix:
+    on a radius-100 rope at speed 260 with gravity=500 and PERP_VELOCITY,
+    speed decayed 260 -> 239 (10s) -> 190 (30s) -> 71 (60s) -> 10 (70s) while
+    the radius stayed pinned at exactly 100. Cause: apply_gravity's
+    PERP_VELOCITY branch rotated the whole velocity vector about the ORIGIN,
+    injecting a component that was radial relative to the node, which
+    _rotate_on_rope then stripped every step -- two individually
+    speed-preserving operations leaking energy together. The fix routes
+    gravity through gravity_force (a force increment) instead of
+    apply_gravity (a rotation) whenever a rigid rope is held. For a player on
+    a rope moving tangentially, PERP_VELOCITY's force is purely radial to the
+    node, so the rope absorbs all of it: gravity does nothing while attached,
+    and speed and radius both hold for the full 60 simulated seconds."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=500.0, nodes=[node], spawn=(300.0, 400.0))
+    w.gravity_mode = GravityMode.PERP_VELOCITY
+    w.rigid_rope = True
+    w.vx, w.vy = 0.0, 260.0
+
+    for _ in range(14_400):                     # sixty seconds at 240 Hz
+        w.step(Charge.ATTRACT)
+        assert not w.dead
+
+    assert math.hypot(w.vx, w.vy) == pytest.approx(260.0, rel=1e-6)
+    assert math.hypot(w.x - node.x, w.y - node.y) == pytest.approx(100.0, rel=1e-6)
+
+
+def test_a_rigid_rope_under_along_still_swings_the_pendulum():
+    """Finding 2's fix must not overcorrect: ALONG and PERP_CORRIDOR were
+    already forces, not rotations, so nothing about them should change --
+    gravity must still visibly swing a pendulum held on a rigid rope.
+
+    Player starts at rest level with the node (300, 400) vs node (400, 400),
+    so the released height above the bottom of the swing equals the radius,
+    100 px. Energy conservation on a rope that does no work puts the peak
+    speed, reached at the bottom of the swing, at sqrt(2 * g * r):
+        sqrt(2 * 500 * 100) ~= 316.2 px/s
+    A speed that never moved off ~0 would mean gravity was being silently
+    swallowed by the rope the way PERP_VELOCITY's was; asserting a wide swing
+    range makes this non-vacuous."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=500.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    w.vx, w.vy = 0.0, 0.0             # released from rest
+
+    speeds = []
+    for _ in range(2000):             # a bit over eight seconds: several swings
+        w.step(Charge.ATTRACT)
+        assert not w.dead
+        speeds.append(math.hypot(w.vx, w.vy))
+        assert math.hypot(w.x - node.x, w.y - node.y) == pytest.approx(100.0, abs=1e-3)
+
+    assert max(speeds) - min(speeds) > 200.0, (min(speeds), max(speeds))
+    assert max(speeds) == pytest.approx(316.2, rel=0.05)
 
 
 def test_a_gravity_swap_leaves_the_velocity_alone():
