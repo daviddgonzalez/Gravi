@@ -19,7 +19,12 @@ MAX_STEPS_PER_FRAME = 12  # avoid a spiral of death after a long stall
 
 # Palette — near-black field, everything else is emitted light.
 COLOR_BG = (5, 6, 11)
-COLOR_NODE = (80, 240, 255)      # cyan: an anchor you can use
+# Red, chosen by the author on 2026-08-20. Note the tension with core spec
+# 278 ("hue is charge... each own a hue that appears nowhere else"): red is
+# the obvious hue for the hazard entity that has not been built yet, and it
+# conventionally reads as danger, so a safe grabbable thing wearing it
+# inverts the usual prior. Low blue keeps it clear of the repel pink.
+COLOR_NODE = (255, 60, 60)       # an anchor you can use
 COLOR_CORE = (235, 255, 255)     # the solid, lethal centre
 COLOR_PLAYER = (255, 240, 120)
 COLOR_BEAM_ATTRACT = (80, 240, 255)
@@ -69,7 +74,13 @@ TUNABLES: dict[str, TunableSpec] = {
     # capping it would blunt exactly the slingshot the game is built on.
     "speed_max":      TunableSpec(600.0,  50.0,  100.0, 8000.0),
     "fall_speed_max": TunableSpec(600.0,  50.0,  100.0, 8000.0),
-    "player_radius":  TunableSpec(7.0,    1.0,    2.0,   40.0),
+    # 12 rather than slice 1's 7, chosen by the author on 2026-08-20. Mass is
+    # fixed at 1.0 in sim.py and radius enters no force calculation, so this
+    # changes nothing about the physics — but _check_cores kills on
+    # core_radius + player_radius, so a bigger player is a bigger target and
+    # near-misses that used to be clean now kill. It is a difficulty knob
+    # wearing a cosmetic hat.
+    "player_radius":  TunableSpec(12.0,   1.0,    2.0,   40.0),
     # Spec 9's two open questions live here. flip_duration is what criterion 2
     # (comfortable at the one rate we ship) is judged on. chamber_depth is the
     # flip-FREQUENCY knob: at identical physics it sets how long a player

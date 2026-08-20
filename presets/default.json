@@ -8,7 +8,7 @@
   "gravity": 500.0,
   "k_attract": 15.0,
   "k_repel": 15.0,
-  "player_radius": 7.0,
+  "player_radius": 12.0,
   "speed_max": 600.0,
   "turn_gap_max": 7.0,
   "turn_gap_min": 3.0,
