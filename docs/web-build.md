@@ -23,6 +23,29 @@ before assuming the WASM build is merely slow. Found the hard way on 2026-08-18.
 
     pygbag --port 8000 main.py    # builds, then serves with the /cdn proxy
 
+## And do not iterate on pygbag's server either
+
+pygbag's server is right for a first load and wrong for the second one. The
+generated loader fetches the app bundle from a url with no version in it —
+`platform.fopen("<name>.apk", "rb")` — so once the browser has cached that url,
+**reloading the page cannot produce a new build**. The page reloads, the runtime
+boots, and it unpacks the previous build. Nothing errors, because nothing
+failed. Ctrl+Shift+R does not help and neither does closing the tab: the request
+is simply never made again. Measured on 2026-08-20 — two consecutive page loads
+served entirely from cache, the last fetch of the bundle four reloads earlier.
+
+`tools/serve_web.py` fixes it by splitting what pygbag's server treats alike:
+the app bundle is served `no-store` (and conditional requests are stripped, so
+it cannot 304 either), while `/cdn/...` is proxied from pygame-web.github.io,
+cached on disk under `build/cdn-cache/`, and served immutable. The runtime is
+~10 MB and versioned in its own url; the bundle is small and changes every
+build.
+
+    PYTHONPATH=src .venv/bin/pygbag --build main.py    # build only
+    python tools/serve_web.py 8000                     # serve it
+
+The disk cache means only the first run needs the network.
+
 ## Constraints this imposes
 
 - `main.py` must stay at the repo root — pygbag packages the directory it is
