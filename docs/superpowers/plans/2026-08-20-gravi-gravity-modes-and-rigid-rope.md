@@ -447,6 +447,16 @@ with:
                                          self.vx, self.vy, self.gravity, self.dt)
 ```
 
+> **Correction, 2026-08-20 (after implementation).** Step 5 below, as written,
+> is WRONG and was replaced during implementation. Euler-stepping in a straight
+> line and then reprojecting onto the circle strips a `cos(theta)` fraction of
+> the tangential speed every step, which compounds to ~12% loss over the ten
+> seconds the test covers — measured by running it standalone. The shipped
+> implementation rotates position and velocity together about the node instead
+> (`_rotate_on_rope` in `sim.py`), which is speed- and radius-preserving by
+> construction, exactly as `PERP_VELOCITY` is. Step 5 is kept here as written
+> because the reasoning that caught it is worth more than a tidy plan.
+
 - [ ] **Step 5: Apply the constraint after integrating**
 
 In `step()`, after `self.elapsed += self.dt` and before `self._check_bounds()`:

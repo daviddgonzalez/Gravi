@@ -95,8 +95,21 @@ the flip cadence and amendment A3's lead all keep working unchanged.
 `T` toggles it. Off is today's spring.
 
 When rigid, latching records the distance to the node, and that distance is
-then held: each step the position is projected back onto the circle and the
-radial component of velocity is removed.
+then held by advancing the player along the held circle: position and velocity
+are both rotated about the node by the angle swept in that step.
+
+**Not** by Euler-stepping in a straight line and reprojecting onto the circle
+afterwards, which is what this section said before implementation and which is
+wrong for the same reason §2.1 gives. Stripping the radial component measured
+*after* a straight-line step multiplies the tangential speed by `cos(theta)`
+every step, and that compounds: at the corridor's own scale (`theta` ≈ 0.01
+rad/step) a held swing lost ~12% of its speed over ten seconds. Measured on
+2026-08-20 by running the reprojection algorithm standalone before it was
+wired in. Rotating position and velocity together is speed- and
+radius-preserving by construction at any step size.
+
+The radial component is still removed the moment the rope is grabbed, which is
+what makes a grab kill inward or outward drift rather than inheriting it.
 
 Three decisions worth stating:
 
