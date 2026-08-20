@@ -10,6 +10,7 @@ _font: pygame.font.Font | None = None
 
 HELP_LINES = (
     "J / LMB attract   K / RMB repel   R new run   C camera   - / = view",
+    "G gravity mode   T rigid rope",
     "TAB overlay   UP/DOWN select   LEFT/RIGHT adjust   SHIFT x10",
     "F5 save preset   F9 load preset   F8 defaults",
     "ALT+LMB drag node   ALT+RMB add   DEL remove   [ ] radius   , . core",
