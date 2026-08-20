@@ -15,7 +15,10 @@ the bundle four reloads earlier.
 So this server splits the two things pygbag's server treats alike:
 
 - **The app bundle** (`index.html`, `.apk`, `.tar.gz`) is served `no-store`.
-  It changes every build, it is small, and a stale one is invisible.
+  It is small, and a stale one is invisible — nothing errors, you just play the
+  wrong build. Note that `index.html` is actually content-stable build to build
+  (it is a template plus the archive name); the archives are what move. They are
+  served alike because the cost of not caching any of them is nil.
 - **The runtime** (`/cdn/...`) is proxied from pygame-web.github.io and cached
   on disk, then served as immutable. It is ~10 MB, it is versioned in its own
   url, and it changes when pygbag does — roughly never. Without the disk cache

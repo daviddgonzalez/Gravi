@@ -46,6 +46,22 @@ build.
 
 The disk cache means only the first run needs the network.
 
+### What is actually in the three files
+
+- `index.html` — the loader: a pygbag template plus a config block naming the
+  archive. **Content-stable** across rebuilds; verified byte-identical over a
+  rebuild on 2026-08-20.
+- `<name>.apk` — a ZIP of the whole project directory under `assets/`. Not just
+  `main.py` and `src/`: pygbag does not read `.gitignore`, so `docs/`, `tests/`,
+  `presets/`, `rooms/` and `.pytest_cache/` are all in there too (64 entries as
+  of 2026-08-20).
+- `<name>.tar.gz` — the same payload again, as a fallback the loader tries if
+  the apk fails.
+
+The archives therefore change far more often than the game does. Running the
+test suite alone rewrites `.pytest_cache/v/cache/nodeids`, which is packaged,
+which changes the archive — with no gameplay difference whatsoever.
+
 ## Constraints this imposes
 
 - `main.py` must stay at the repo root — pygbag packages the directory it is
