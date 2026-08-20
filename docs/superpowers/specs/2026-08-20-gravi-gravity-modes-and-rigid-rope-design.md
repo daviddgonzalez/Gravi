@@ -12,14 +12,28 @@ Three experiments test whether that can be inverted.
 ## 1. What this is not
 
 **Not a change to the shipped force law.** Every mode here defaults to today's
-behaviour. The game boots identical to the build the slice 2 gate is being
-judged on, and you opt in with a key. Two reasons that matters:
+behaviour. The game boots behaving as the build the slice 2 gate is being judged
+on, and you opt in with a key. Two reasons that matters:
 
 - The slice 2 verdict is still open. Changing what the game does at boot would
   invalidate the playtest that is already half-run.
 - `field.py` is shared code, not copied code: the game, the offline validator
   and the trainer all import it (session map invariant 1, core spec §8.1). A
   mode that only exists when a key is pressed cannot desynchronise them.
+
+**"Behaving as", not "bit-for-bit".** Routing gravity through `apply_gravity`
+reorders the arithmetic: the old code summed gravity and the node force into one
+acceleration and applied it once, and the new code adds the node force to the
+velocity and then calls the mode. `ALONG` computes the same quantity, but not in
+the same float operations, so a trajectory with a node force acting alongside
+gravity diverges at ULP scale — measured 2026-08-20, first difference at step 17
+of a 600-step trace, then compounding as any chaotic trajectory does. That is
+below anything a player can perceive and no test is sensitive to it (the
+determinism test compares the code against itself, not against a recorded
+baseline). It is recorded because two future things would care: an input replay
+recorded before this change would not reproduce, and S10's ghosts are exactly
+that. The reorder is not incidental — `PERP_VELOCITY` rotates the *finished*
+velocity, so it has to see the one the node force produced.
 
 **If a mode wins the playtest, that changes.** It becomes part of the force law
 S7 has to freeze before baking a chamber library (session map invariant 2), and

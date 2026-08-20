@@ -359,7 +359,7 @@ async def main() -> None:
                         f"   distance {int(world.distance)}"
                         f"   camera {'rotating' if rotating_camera else 'fixed'}"
                         f"   gravity {gravity_mode.value}"
-                        f"{'   rope rigid' if rigid_rope else ''}")
+                        + ('   rope rigid' if rigid_rope else ''))
             hud.draw(screen, tuning, status, fps=clock.get_fps(), steps=steps,
                      run=run_line)
 
