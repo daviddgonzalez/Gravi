@@ -11,7 +11,7 @@
     {
       "id": 11,
       "subject": "Task 11: sim.py \u2014 run the mode, and hold the rope",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         10
       ],
@@ -20,7 +20,7 @@
     {
       "id": 12,
       "subject": "Task 12: main.py \u2014 G cycles the mode, T toggles the rope",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         11
       ],
@@ -29,7 +29,7 @@
     {
       "id": 13,
       "subject": "Task 13: rebuild both builds and hand them over",
-      "status": "pending",
+      "status": "completed",
       "blockedBy": [
         12
       ],
