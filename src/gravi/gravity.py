@@ -38,7 +38,7 @@ def ease_in_out(t: float) -> float:
     return 0.5 - 0.5 * math.cos(math.pi * t)
 
 
-class GravityMode(str, Enum):
+class GravityMode(Enum):
     """What the gravity vector DOES to the player. Not what it is — the eased
     quarter-turn in `GravityState` is untouched by all of these, so the camera,
     the flip cadence and the camera lead keep working unchanged.
@@ -56,8 +56,13 @@ class GravityMode(str, Enum):
         return order[(order.index(self) + 1) % len(order)]
 
 
-# Below this speed, "perpendicular to travel" has no meaning.
-PERP_VELOCITY_EPSILON = 1e-6
+# The most the heading may turn in one physics step. Beyond this the mode
+# stops being steering and becomes a spin dictated by the exact float value
+# of a tiny speed: at magnitude 500 and dt 1/240, a speed of 0.1 px/s turns
+# the heading 132 degrees in a single step. Below the speed where that would
+# happen, gravity behaves as ALONG instead — which is also the only thing
+# that gets a stopped player moving again.
+MAX_TURN_PER_STEP = 0.25        # radians, ~14 degrees
 
 
 def apply_gravity(mode: GravityMode, direction: Vec, vx: float, vy: float,
@@ -69,6 +74,14 @@ def apply_gravity(mode: GravityMode, direction: Vec, vx: float, vy: float,
     finished velocity can one function cover both without the caller knowing
     which it got.
     """
+    # GravityMode used to mix in `str`, which advertises that a plain string
+    # is interchangeable with a member — but dispatch below uses `is`, so a
+    # string (exactly what json.loads(json.dumps(mode)) returns, and this
+    # project saves/loads JSON presets) would silently compare unequal to
+    # every branch and fall through to PERP_VELOCITY instead of raising.
+    # Resolving by value here makes a string behave correctly, and makes an
+    # unrecognised value raise ValueError instead of failing silently.
+    mode = GravityMode(mode)
     gx, gy = direction
     if mode is GravityMode.ALONG:
         return (vx + gx * magnitude * dt, vy + gy * magnitude * dt)
@@ -80,16 +93,17 @@ def apply_gravity(mode: GravityMode, direction: Vec, vx: float, vy: float,
         return (vx + px * magnitude * dt, vy + py * magnitude * dt)
 
     speed = math.hypot(vx, vy)
-    if speed < PERP_VELOCITY_EPSILON:
-        # Perpendicular to nothing is undefined, and a stopped player would
-        # have nothing left to get them moving again.
+    theta = 0.0 if speed == 0.0 else (magnitude / speed) * dt
+    if speed == 0.0 or abs(theta) > MAX_TURN_PER_STEP:
+        # Perpendicular to nothing is undefined, and near-zero speed makes
+        # theta blow up into a spin rather than steering. Either way, ALONG
+        # is what gets the player moving again.
         return (vx + gx * magnitude * dt, vy + gy * magnitude * dt)
 
     # A ROTATION, not an added force. A perpendicular force does no work in
     # continuous mathematics, but explicit Euler at 240 Hz walks the velocity
     # off the circle it is meant to stay on and the speed creeps upward. A
     # rotation is speed-preserving by construction at any step size.
-    theta = (magnitude / speed) * dt
     c, s = math.cos(theta), math.sin(theta)
     return (vx * c - vy * s, vx * s + vy * c)
 

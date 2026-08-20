@@ -2,7 +2,13 @@ import math
 
 import pytest
 
-from gravi.gravity import QUARTER, GravityState, ease_in_out
+from gravi.gravity import (
+    QUARTER,
+    GravityMode,
+    GravityState,
+    apply_gravity,
+    ease_in_out,
+)
 
 
 def test_starts_settled_pointing_world_down():
@@ -98,9 +104,6 @@ def test_flipping_by_nothing_is_a_no_op():
     assert (g.angle, g.target_turns, g.settled) == before
 
 
-from gravi.gravity import GravityMode, apply_gravity
-
-
 def test_along_is_the_old_behaviour():
     v = apply_gravity(GravityMode.ALONG, (0.0, 1.0), 30.0, 0.0, 500.0, 1.0 / 240.0)
     assert v == pytest.approx((30.0, 500.0 / 240.0))
@@ -152,6 +155,45 @@ def test_perp_velocity_falls_back_when_stationary():
     v = apply_gravity(GravityMode.PERP_VELOCITY, (0.0, 1.0), 0.0, 0.0,
                       500.0, 1.0 / 240.0)
     assert v == pytest.approx((0.0, 500.0 / 240.0))
+
+
+def test_perp_velocity_falls_back_at_low_speed_instead_of_spinning():
+    """theta = (magnitude / speed) * dt is unbounded. At speed 0.1 px/s with
+    the shipped defaults (magnitude=500, dt=1/240) one step would turn the
+    heading by -132.7 degrees — a spin dictated by the exact float value of a
+    tiny speed, not steering. Below the speed where the per-step turn would
+    exceed MAX_TURN_PER_STEP, the mode must fall back to ALONG instead."""
+    along = apply_gravity(GravityMode.ALONG, (0.0, 1.0), 0.1, 0.0, 500.0, 1.0 / 240.0)
+    low_speed = apply_gravity(GravityMode.PERP_VELOCITY, (0.0, 1.0), 0.1, 0.0,
+                              500.0, 1.0 / 240.0)
+    assert low_speed == pytest.approx(along)
+
+
+def test_perp_velocity_still_rotates_at_normal_speed():
+    """The low-speed guard must not swallow the whole mode: at an ordinary
+    speed the rotation still applies rather than falling back to ALONG."""
+    vx, vy = 300.0, 0.0
+    along = apply_gravity(GravityMode.ALONG, (0.0, 1.0), vx, vy, 500.0, 1.0 / 240.0)
+    rotated = apply_gravity(GravityMode.PERP_VELOCITY, (0.0, 1.0), vx, vy,
+                            500.0, 1.0 / 240.0)
+    assert rotated != pytest.approx(along)
+    assert math.hypot(*rotated) == pytest.approx(math.hypot(vx, vy))
+
+
+def test_string_mode_dispatches_correctly():
+    """GravityMode used to mix in str, which advertises that a plain string
+    is interchangeable with a member. But dispatch used `is`, so the string
+    round-tripped through JSON (exactly what a saved preset produces) silently
+    ran PERP_VELOCITY instead of ALONG. Normalising through GravityMode(mode)
+    must make the string behave identically to the member."""
+    by_member = apply_gravity(GravityMode.ALONG, (0.0, 1.0), 30.0, 0.0, 500.0, 1.0 / 240.0)
+    by_string = apply_gravity("along", (0.0, 1.0), 30.0, 0.0, 500.0, 1.0 / 240.0)
+    assert by_string == pytest.approx(by_member)
+
+
+def test_unknown_mode_string_raises():
+    with pytest.raises(ValueError):
+        apply_gravity("sideways", (0.0, 1.0), 30.0, 0.0, 500.0, 1.0 / 240.0)
 
 
 def test_modes_cycle_with_wraparound():
