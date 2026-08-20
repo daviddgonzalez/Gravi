@@ -774,6 +774,70 @@ def test_a_rigid_rope_under_along_still_swings_the_pendulum():
     assert max(speeds) == pytest.approx(316.2, rel=0.05)
 
 
+def test_perp_velocity_clamp_does_not_defeat_the_mode():
+    """Finding 1 (CRITICAL, 2026-08-20 review). PERP_VELOCITY promises gravity
+    cannot change the player's speed, but the clamp used to always measure
+    "fall" along the fixed gravity-state axis regardless of mode. In this mode
+    the velocity rotates freely and sweeps through that axis, so the old
+    clamp truncated it every time it crossed. fall_speed_max is set small
+    (the shipped default) so the old bug actually bites; speed_max is left at
+    lab_world's huge default so the fixed clamp cannot also mask the result --
+    a player at 1500 px/s must stay near 1500, not settle at some smaller
+    value dictated by either cap."""
+    w = lab_world(gravity=500.0, nodes=[], spawn=(400.0, 400.0),
+                  fall_speed_max=600.0)
+    w.gravity_mode = GravityMode.PERP_VELOCITY
+    w.vx, w.vy = 1500.0, 0.0
+
+    for _ in range(600):
+        w.step(Charge.NEUTRAL)
+        assert not w.dead
+
+    assert math.hypot(w.vx, w.vy) == pytest.approx(1500.0, rel=1e-3)
+
+
+def test_perp_corridor_clamp_bounds_the_axis_gravity_actually_feeds():
+    """Finding 2 (IMPORTANT). Section 2.2 says fall_speed_max bounds the
+    lateral drift PERP_CORRIDOR's force feeds and speed_max bounds progress
+    down the corridor -- but the old clamp always treated "fall" as the
+    component along the fixed gravity vector, which in this mode is the axis
+    the force does NOT push on. With speed_max=300 and fall_speed_max=900,
+    the across-lane component gravity feeds must settle near 900, not 300."""
+    w = lab_world(gravity=2000.0, nodes=[], spawn=(400.0, 400.0),
+                  speed_max=300.0, fall_speed_max=900.0)
+    w.gravity_mode = GravityMode.PERP_CORRIDOR
+    gx, gy = w.gravity_state.direction()
+    fx, fy = -gy, gx        # perp(gravity): the axis this mode's force pushes
+
+    for _ in range(600):
+        w.step(Charge.NEUTRAL)
+        assert not w.dead
+
+    across = w.vx * fx + w.vy * fy
+    assert across == pytest.approx(900.0, rel=1e-3)
+
+
+def test_perp_corridor_runs_as_a_world_and_pushes_across_the_lane():
+    """PERP_CORRIDOR was previously exercised only as a pure function in
+    test_gravity.py -- no test ever assigned it to a World. Run it through a
+    real simulation loop and confirm it drifts the player across the lane
+    rather than down the corridor."""
+    w = lab_world(gravity=800.0, nodes=[], spawn=(400.0, 400.0))
+    w.gravity_mode = GravityMode.PERP_CORRIDOR
+    start_x, start_y = w.x, w.y
+
+    for _ in range(300):
+        w.step(Charge.NEUTRAL)
+        assert not w.dead
+
+    gx, gy = w.gravity_state.direction()
+    fx, fy = -gy, gx        # perp(gravity): across the lane
+    across_lane = (w.x - start_x) * fx + (w.y - start_y) * fy
+    down_corridor = (w.x - start_x) * gx + (w.y - start_y) * gy
+    assert abs(across_lane) > 50.0
+    assert abs(across_lane) > abs(down_corridor)
+
+
 def test_a_gravity_swap_leaves_the_velocity_alone():
     """Already true, and pinned here because nothing asserted it: crossing an
     arrow changes the FIELD, never the player's velocity vector. It reads like

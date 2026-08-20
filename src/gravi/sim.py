@@ -227,21 +227,7 @@ class World:
             self.vx, self.vy = apply_gravity(self.gravity_mode, (gx, gy),
                                              self.vx, self.vy, self.gravity, self.dt)
 
-        # Fall and carry speed are bounded separately, never as one |v| clamp,
-        # and in GRAVITY-RELATIVE axes. An isotropic clamp rescales the whole
-        # vector, so the velocity gravity keeps adding gets paid for out of the
-        # player's carry — every swing bleeds it while total speed sits pinned
-        # at the cap. Speed against gravity is left uncapped so a slingshot can
-        # still fling.
-        px, py = gy, -gx
-        fall = self.vx * gx + self.vy * gy
-        carry = self.vx * px + self.vy * py
-        if fall > self.fall_speed_max:
-            fall = self.fall_speed_max
-        if abs(carry) > self.speed_max:
-            carry = math.copysign(self.speed_max, carry)
-        self.vx = fall * gx + carry * px
-        self.vy = fall * gy + carry * py
+        self._clamp_speed(gx, gy)
 
         if rigid:
             nx, ny = self._rotate_on_rope(node)
@@ -259,6 +245,68 @@ class World:
         self._check_bounds()
         if not self.dead:
             self._check_cores()
+
+    def _clamp_speed(self, gx: float, gy: float) -> None:
+        """Bound speed on the axis the ACTIVE MODE's gravity actually pushes
+        along, never as one isotropic |v| clamp and never assuming that axis
+        is the fixed gravity vector — both are the two ways this went wrong
+        in the 2026-08-20 review (findings 1 and 2 on the gravity modes doc).
+
+        Fall and carry are always bounded separately for the reason `config`
+        gives above `speed_max`/`fall_speed_max`: an isotropic clamp rescales
+        the whole vector, so the velocity gravity keeps adding gets paid for
+        out of the player's carry — every swing bleeds it while total speed
+        sits pinned at the cap. But which axis is "fall" depends on which
+        axis the current mode's gravity actually feeds:
+
+        - ALONG feeds the gravity axis itself. Untouched from slice 1 — this
+          is the shipped game, and its arithmetic below is byte-identical to
+          before this method existed.
+        - PERP_CORRIDOR's force is perp(gravity) (see `gravity_force`), so
+          THAT is the axis fall_speed_max must bound, and the gravity axis —
+          the one the force never touches — is carry, bounded by speed_max.
+          Getting this backwards is finding 2: it silently swapped which cap
+          governs the corridor versus the lane.
+        - PERP_VELOCITY's gravity does no work at all — it is a rotation of
+          the whole vector, not a force along any fixed axis — so there is no
+          axis it feeds and nothing for a fall/carry split to protect. The
+          isotropic clamp this falls back to is NOT the pathology the split
+          exists to avoid: that pathology is gravity continuously adding
+          speed along one axis while an isotropic cap makes every other axis
+          pay for it. Here gravity adds zero speed on any axis, so there is
+          nothing to pay for. This was finding 1: the old code kept
+          measuring "fall" along the fixed gravity-state axis regardless of
+          mode, and since PERP_VELOCITY's velocity rotates freely through
+          that axis, it got truncated on every crossing — defeating the
+          mode's whole promise that gravity cannot change speed.
+        """
+        if self.gravity_mode is GravityMode.PERP_VELOCITY:
+            speed = math.hypot(self.vx, self.vy)
+            if speed > self.speed_max:
+                scale = self.speed_max / speed
+                self.vx *= scale
+                self.vy *= scale
+            return
+
+        if self.gravity_mode is GravityMode.PERP_CORRIDOR:
+            # perp(gravity), same handedness as gravity_force's own
+            # PERP_CORRIDOR push: the axis this mode's force feeds.
+            fx, fy = -gy, gx
+            carry_x, carry_y = gx, gy
+        else:
+            # ALONG. fall is along gravity, carry is perpendicular to it —
+            # exactly slice 1's split.
+            fx, fy = gx, gy
+            carry_x, carry_y = gy, -gx
+
+        fall = self.vx * fx + self.vy * fy
+        carry = self.vx * carry_x + self.vy * carry_y
+        if fall > self.fall_speed_max:
+            fall = self.fall_speed_max
+        if abs(carry) > self.speed_max:
+            carry = math.copysign(self.speed_max, carry)
+        self.vx = fall * fx + carry * carry_x
+        self.vy = fall * fy + carry * carry_y
 
     def _update_rope(self, node: Node | None, rigid: bool) -> None:
         """Record the radius at the moment of the grab, and forget it the

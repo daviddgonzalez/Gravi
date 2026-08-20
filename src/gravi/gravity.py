@@ -83,14 +83,15 @@ def apply_gravity(mode: GravityMode, direction: Vec, vx: float, vy: float,
     # unrecognised value raise ValueError instead of failing silently.
     mode = GravityMode(mode)
     gx, gy = direction
-    if mode is GravityMode.ALONG:
-        return (vx + gx * magnitude * dt, vy + gy * magnitude * dt)
-
-    if mode is GravityMode.PERP_CORRIDOR:
-        # Same handedness as chamber.perp — one convention for "a quarter turn"
-        # in this codebase, not two that differ by a sign.
-        px, py = -gy, gx
-        return (vx + px * magnitude * dt, vy + py * magnitude * dt)
+    if mode is GravityMode.ALONG or mode is GravityMode.PERP_CORRIDOR:
+        # Both of these are plain forces — gravity_force already has the
+        # direction-scaling formula for each, differing from here only by the
+        # dt factor, so compute the acceleration there and integrate it here
+        # rather than keeping two copies of the same arithmetic in sync. The
+        # multiplication order below is unchanged (fx = gx * magnitude, then
+        # fx * dt), so this is byte-identical to the pre-refactor code.
+        fx, fy = gravity_force(mode, direction, vx, vy, magnitude)
+        return (vx + fx * dt, vy + fy * dt)
 
     speed = math.hypot(vx, vy)
     theta = 0.0 if speed == 0.0 else (magnitude / speed) * dt

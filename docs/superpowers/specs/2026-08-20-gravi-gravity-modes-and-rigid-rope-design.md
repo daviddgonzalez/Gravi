@@ -89,16 +89,40 @@ of curl, or the mode is unlearnable. It uses the same handedness as `perp()` in
 codebase for "rotated a quarter turn" rather than two that differ by a sign,
 which is the family of bug this subsystem has already produced once.
 
-### 2.2 What the modes do not change
+### 2.2 The speed clamp is mode-aware
 
-The gravity-relative speed clamp stays exactly as it is, and stays meaningful:
+An earlier version of this section claimed the clamp "stays exactly as it
+is" across all three modes, measuring "fall" along the fixed gravity vector
+regardless of mode. That was wrong, and a 2026-08-20 review caught the two
+consequences: in `perp-velocity` the velocity rotates freely and sweeps
+through that fixed axis, so the clamp truncated it on every crossing — a
+player launched at 1500 px/s decayed toward `speed_max` instead of holding
+speed, exactly the property this mode exists to guarantee. And in
+`perp-corridor` the claim that "fall is across the lane and carry is along
+the corridor" was already describing the *intended* axes correctly, but the
+code measured both against the fixed gravity vector instead, so
+`fall_speed_max` was silently bounding progress and `speed_max` was bounding
+the lateral drift — backwards from what is written above. It was invisible
+at the shipped defaults only because both caps default to the same value.
 
-- In `along`, unchanged.
-- In `perp-corridor`, "fall" is across the lane and "carry" is along the
-  corridor, so `fall_speed_max` bounds sideways drift and `speed_max` bounds
-  progress.
-- In `perp-velocity`, gravity is perpendicular to travel by definition, so the
-  fall component is always ~0 and total speed is bounded by `speed_max` alone.
+The fix (`World._clamp_speed`) measures each mode's fall/carry split against
+the axis that mode's gravity actually pushes along, so the split does what
+this section always meant it to:
+
+- `along` — fall is along the gravity vector, carry is perpendicular to it.
+  Unchanged from slice 1.
+- `perp-corridor` — the force here is `perp(gravity)` (see `gravity_force`),
+  so *that* is the axis `fall_speed_max` bounds, and the gravity vector
+  itself — the axis the force never touches — is carry, bounded by
+  `speed_max`. `fall_speed_max` bounds the sideways drift gravity feeds;
+  `speed_max` bounds progress down the corridor.
+- `perp-velocity` — gravity does no work at all in this mode: it is a
+  rotation of the whole velocity vector, not a force along any fixed axis, so
+  there is no axis to protect with a fall/carry split. Total speed is clamped
+  isotropically at `speed_max` instead. This is not the pathology the split
+  exists to avoid — that pathology is gravity continuously adding speed along
+  one axis while an isotropic cap makes every other axis pay for it, and here
+  gravity adds zero speed on any axis, so there is nothing to pay for.
 
 The eased quarter-turn (`GravityState`) is untouched. Modes change what the
 gravity *vector does to the player*, never what the vector *is*, so the camera,
