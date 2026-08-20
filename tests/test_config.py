@@ -38,8 +38,25 @@ def test_the_field_of_view_knobs_are_tunable():
     assert lead.hi <= 0.5
 
 
-def test_the_game_does_not_open_at_one_to_one():
-    """1:1 puts barely 360 world units ahead of a centred player, which is not
-    enough corridor to plan a grab against — the reason the knob exists at all.
-    Opening at it means the knob may as well not be there."""
-    assert config.TUNABLES["view_width"].default > float(config.WINDOW_WIDTH)
+def test_the_game_opens_at_one_to_one():
+    """Reversed on 2026-08-19 by the author, who asked for more room in FRONT
+    rather than a wider view of everything. Room ahead is camera_lead's job
+    now; view_width stays available for anyone who does want the whole view
+    pulled back."""
+    assert config.TUNABLES["view_width"].default == float(config.WINDOW_WIDTH)
+
+
+def test_the_lead_is_what_buys_room_ahead():
+    lead = config.TUNABLES["camera_lead"]
+    assert lead.default > 0.0
+    assert lead.hi <= 0.45   # beyond this the player is against the screen edge
+
+
+def test_the_turn_cadence_is_tunable():
+    """Gravity turning at every arrow is what made the corridor exhausting, so
+    how often it turns has to be sweepable while playing."""
+    low = config.TUNABLES["turn_gap_min"]
+    high = config.TUNABLES["turn_gap_max"]
+    assert low.default == 3.0
+    assert high.default == 7.0
+    assert low.lo >= 1.0

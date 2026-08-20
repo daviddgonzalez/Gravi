@@ -95,13 +95,21 @@ TUNABLES: dict[str, TunableSpec] = {
     # screen-up so more of the fall ahead is on screen. The fixed camera is
     # centred and stays centred (amendment A1), so widening the view is the
     # only way it gets more room ahead.
-    # The default is deliberately NOT 1:1. At 1280 a centred player has ~360
-    # world units of corridor ahead, which is under a quarter of a chamber —
-    # enough to react to a node, not enough to plan a route through one. 2200
-    # puts ~620 ahead. It is a starting point for the playtest sweep, not a
-    # settled value.
-    "view_width":     TunableSpec(2200.0, 80.0,  640.0, 4800.0),
-    "camera_lead":    TunableSpec(0.12,   0.02,   0.0,     0.40),
+    # 1:1. Opening wider was tried on 2026-08-19 and reversed the same day: a
+    # wider view shrinks everything to buy room in every direction, and what
+    # was actually wanted was room in FRONT. That is camera_lead's job. The
+    # knob stays, on the `-` and `=` keys, for anyone who does want the whole
+    # view pulled back.
+    "view_width":     TunableSpec(1280.0, 80.0,  640.0, 4800.0),
+    # How far the eye sits back from the player, as a fraction of the axis
+    # being travelled along. 0 is a dead-centre camera; 0.22 puts ~72% of the
+    # travel axis in front of the player instead of 50%.
+    "camera_lead":    TunableSpec(0.22,   0.02,   0.0,     0.40),
+    # Gravity turns every turn_gap_min..turn_gap_max chambers. Turning at every
+    # arrow is what made the corridor exhausting to read. Structural: changing
+    # either rebuilds the corridor from the same seed.
+    "turn_gap_min":   TunableSpec(3.0,    1.0,    1.0,    12.0),
+    "turn_gap_max":   TunableSpec(7.0,    1.0,    1.0,    20.0),
 }
 
 

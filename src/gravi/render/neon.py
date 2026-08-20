@@ -187,7 +187,15 @@ def draw_arrow(surface: pygame.Surface, chamber, camera,
                is_current: bool = True) -> None:
     """The exit arrow spans the chamber's FULL far side, so it reads as a
     threshold you cross rather than a target you aim at. Chevrons point along
-    next_direction, which is where gravity will pull once you are through."""
+    next_direction, which is where gravity will pull once you are through.
+
+    A chamber that does not turn draws nothing. The arrow means GRAVITY TURNS
+    HERE; drawing one at every seam once most chambers run straight would teach
+    the player to ignore arrows, and the one that does turn gravity is then the
+    one they miss."""
+    if chamber.turn == 0:
+        return
+
     a, b = (camera.to_screen(*point) for point in chamber.arrow_endpoints())
     pygame.draw.line(surface, _scaled(config.COLOR_ARROW,
                                       (204 if is_current else 90) / 255.0),

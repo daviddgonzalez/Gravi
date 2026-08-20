@@ -73,6 +73,12 @@ class ChamberParams:
     nodes_per_depth: float = 1.0 / 420.0
     keep_behind: int = 3
     generate_ahead: int = 4
+    # Gravity turns every turn_gap_min..turn_gap_max chambers; the ones between
+    # run straight through. Turning at every single arrow is what made the
+    # corridor exhausting to read, and per amendment A1 the rate is a comfort
+    # constant, so this is a cadence chosen once, not a difficulty curve.
+    turn_gap_min: int = 3
+    turn_gap_max: int = 7
 
 
 @dataclass(frozen=True)
@@ -125,11 +131,37 @@ class Chamber:
                 self.world(d, w), self.world(0.0, w))
 
 
+def turn_schedule(seed: int, params: ChamberParams,
+                  upto: int) -> dict[int, int]:
+    """Which chamber indices turn gravity, and which way, up to `upto`.
+
+    Walked from the start of the run on its own RNG stream rather than sampled
+    per chamber, for two reasons. A cadence is a property of the run — "a turn
+    every three to seven chambers" cannot be decided by looking at one chamber
+    alone — and S7's validator has to reproduce the same corridor from the seed
+    alone (core spec 8.1), so where the turns land must not depend on how far
+    the player happened to fly or on what order chambers were generated in.
+    """
+    rng = random.Random(f"{seed}:turn-cadence")
+    low, high = int(params.turn_gap_min), int(params.turn_gap_max)
+    schedule: dict[int, int] = {}
+    at = rng.randint(low, high)
+    while at <= upto:
+        schedule[at] = 1 if rng.random() < 0.5 else -1
+        at += rng.randint(low, high)
+    return schedule
+
+
 def make_chamber(index: int, entry: Vec, direction: Vec,
                  params: ChamberParams, seed: int | None = None,
-                 rng: random.Random | None = None) -> Chamber:
+                 rng: random.Random | None = None,
+                 turn: int | None = None) -> Chamber:
     """One chamber of the single slice 2 archetype. Either pass an `rng` (the
-    chain does, so the whole chain is one deterministic stream) or a `seed`."""
+    chain does, so the whole chain is one deterministic stream) or a `seed`.
+
+    `turn` is supplied by the chain from its cadence schedule. Left None it is
+    sampled as a coin flip, which is what a chamber built on its own for a test
+    wants: a turning chamber, without a run around it to give it a cadence."""
     if rng is None:
         rng = random.Random(seed)
 
@@ -161,8 +193,9 @@ def make_chamber(index: int, entry: Vec, direction: Vec,
             core_radius=params.core_min + rng.random() * (params.core_max - params.core_min),
         ))
 
-    turn = 1 if rng.random() < 0.5 else -1
-    return Chamber(index=index, entry=entry, direction=direction, turn=turn,
+    if turn is None:
+        turn = 1 if rng.random() < 0.5 else -1
+    return Chamber(index=index, entry=entry, direction=direction, turn=int(turn),
                    nodes=tuple(nodes), params=params)
 
 
@@ -178,9 +211,21 @@ class ChamberChain:
         self.chambers: list[Chamber] = []
         self.outlines: list[tuple[Vec, ...]] = []
         self.at = 0
-        first = make_chamber(0, start, direction, self.params, rng=self._rng)
+        self._turns: dict[int, int] = {}
+        self._turns_upto = -1
+        first = make_chamber(0, start, direction, self.params, rng=self._rng,
+                             turn=self._turn_for(0))
         self.chambers.append(first)
         self.ensure_ahead()
+
+    def _turn_for(self, index: int) -> int:
+        """0 for a straight chamber. The schedule is extended in blocks rather
+        than rebuilt per chamber, and it is keyed off the seed, so it is the
+        same whether a run is generated in one go or a chamber at a time."""
+        if index > self._turns_upto:
+            self._turns_upto = index + 64
+            self._turns = turn_schedule(self.seed, self.params, self._turns_upto)
+        return self._turns.get(index, 0)
 
     @property
     def current(self) -> Chamber:
@@ -192,7 +237,7 @@ class ChamberChain:
             last = self.chambers[-1]
             self.chambers.append(make_chamber(
                 last.index + 1, last.exit_center, last.next_direction,
-                self.params, rng=self._rng))
+                self.params, rng=self._rng, turn=self._turn_for(last.index + 1)))
 
     def advance(self) -> Chamber:
         """The player crossed the current chamber's arrow. Returns the chamber

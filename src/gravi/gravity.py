@@ -58,6 +58,11 @@ class GravityState:
     def flip_by(self, quarter_turns: int) -> None:
         """Turn by a signed number of quarter turns, from wherever the ease
         currently is — so a flip that interrupts another flip is continuous."""
+        if int(quarter_turns) == 0:
+            # A straight chamber crosses its seam with turn 0. Starting an ease
+            # to the angle we are already at would report the state as mid-flip
+            # for flip_duration seconds while nothing moved.
+            return
         self._from_angle = self.angle
         self.target_turns += int(quarter_turns)
         if self.flip_duration <= 0.0:

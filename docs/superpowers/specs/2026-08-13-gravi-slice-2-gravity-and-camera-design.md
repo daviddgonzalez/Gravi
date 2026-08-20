@@ -79,6 +79,54 @@ block on it being as good as the rotating camera.
 > is gravity, and swinging it on every flip is exactly the pan A1 forbids.
 > Widening is therefore the *only* way the fixed camera gains room ahead — which
 > is a real asymmetry against §5.3, and something the playtest should judge.
+
+> **Amendment A3 — 2026-08-19. The fixed camera leads along gravity.**
+> Reverses §5.2's "no gravity-driven motion of any kind". Asked for directly by
+> the author after playing A2: a wider view was not what was wanted, because
+> widening shrinks everything to buy room in *every* direction. What was wanted
+> is room **in front**.
+>
+> What §5.2 actually measured was a lead pinned to **screen-up** while gravity
+> was free to point anywhere, which flew the player blind into the edge of the
+> screen. A lead that follows the gravity vector cannot do that: the room is
+> always in front, whichever way in front currently points. It is scaled per
+> axis, so the framing rule is the same in both orientations — half the axis you
+> are travelling along, plus the lead. That matters because a 16:9 window
+> already puts far more world ahead of a sideways run than of a fall, which is
+> why up-and-down chambers read worse than left-and-right ones, and it is the
+> specific complaint this amendment answers.
+>
+> What survives of §5.2's objection is that the eye now moves while gravity
+> eases from one quarter to the next. Accepted deliberately, on two grounds:
+> A4 makes turns rare, and `camera_lead = 0` restores §5.2's strictly centred
+> camera exactly, so the framing §5.2 asked for is still one number away.
+>
+> `view_width` reverts to 1:1 by default. It stays as a knob.
+
+> **Amendment A4 — 2026-08-19. Gravity turns every few chambers, not every
+> one.**
+> Asked for by the author: a turn every 3–7 chambers, sampled per gap. The
+> chambers between run straight through, and their arrows are **not drawn** —
+> the arrow means *gravity turns here*, and drawing one at every seam once most
+> seams do nothing would teach the player to ignore arrows, so the one that
+> does turn gravity is the one they would then miss.
+>
+> Consequences worth knowing:
+>
+> 1. **Flip frequency is now depth × cadence**, not depth alone. §9 called
+>    `chamber_depth` the flip-frequency knob; it is now one of two, and per
+>    amendment A1 both are comfort constants settled once, never ramped and
+>    never fed to a difficulty score.
+> 2. **§4.3's zero-offset guarantee applies at turns only.** A straight seam
+>    carries the player's lateral offset through, which is correct — a corridor
+>    that keeps going should not shunt you back to the centre line. The
+>    lane-clearance rule still matters most at turns, where every player does
+>    arrive on the centre line.
+> 3. **Runs are much longer between turns.** A headless run cleared chambers at
+>    ~3.3 s each, so a 3–7 gap is a flip roughly every 10–23 s where it used to
+>    be one every ~3 s. Whether that is too few is a playtest question.
+> 4. The cadence is walked from the run's seed on its own RNG stream, so S7's
+>    validator reproduces the same turns from the seed alone (core spec §8.1).
 >
 > One consequence for drawing: world lengths (node radii, cores, the player)
 > scale with the view, because the influence ring IS the influence radius (§7 of
@@ -211,9 +259,12 @@ Trigger is a **segment crossing** — the player's step segment against the
 arrow segment — not a proximity disc. There is no radius to fudge, which is
 what criterion 3 requires.
 
-### 4.3 Every chamber is entered at offset zero
+### 4.3 Every chamber is entered at offset zero — at a turn
 
-A consequence of 90° turns that is not obvious and matters a lot:
+A consequence of 90° turns that is not obvious and matters a lot. Amendment A4
+adds the qualifier: it holds at a **turn**, and most chambers no longer turn. A
+straight seam carries your lateral offset straight through, which is what a
+corridor that keeps going should do. Everything below is about turns.
 
 > The old lateral axis becomes the new depth axis. So the offset at which you
 > crossed the arrow becomes your **entry depth** in the next chamber, and your
@@ -371,7 +422,7 @@ Beyond the existing 63 tests, which must keep passing:
   invariant from §3.3, that the rotation carries the gravity vector onto
   screen-down.
 - **Sim** — crossing the exit plane advances the chamber and turns gravity;
-  crossing outside the span kills; entry lateral offset is always zero (§4.3);
+  crossing outside the span kills; entry lateral offset is zero at a turn (§4.3);
   the clamp reduces to slice 1 at `phi = 0` (§6).
 - **Generation** — property test over many seeds: no core in the centre lane;
   the arrow spans the full width; chambers chain without gaps.
@@ -396,8 +447,11 @@ Beyond the existing 63 tests, which must keep passing:
   escalation schedule. The prototype exposes it as a slider alongside a wall-clock `pace`
   control, which exists only to separate "the tempo is wrong" from "the
   mechanic is wrong" and is not a shippable knob.
-- **Field of view.** `view_width` (both cameras) and `camera_lead` (rotating
-  only) ship as sliders per amendment A2, and neither has been tuned by anyone.
+- **Turn cadence.** `turn_gap_min`/`turn_gap_max` default to 3 and 7 per
+  amendment A4, chosen by the author from play, not swept. Together with
+  `chamber_depth` they are what sets flip frequency now.
+- **Field of view.** `view_width` (both cameras) and `camera_lead` (both, since
+  amendment A3) ship as sliders, and neither has been tuned by anyone.
   The question the playtest answers is how much world has to be on screen
   before a grab two chambers away is *plannable* rather than a surprise — and,
   because the fixed camera may not lead, whether widening alone closes the gap

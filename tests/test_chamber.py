@@ -71,9 +71,11 @@ def test_chambers_chain_without_gaps():
 
 
 def test_turns_are_quarter_turns_only():
+    """Zero is a straight chamber; anything else is exactly a quarter turn.
+    See the turn-cadence tests at the bottom of this file."""
     chain = ChamberChain(seed=5, params=PARAMS)
     chain.ensure_ahead(20)
-    assert {ch.turn for ch in chain.chambers} <= {1, -1}
+    assert {ch.turn for ch in chain.chambers} <= {1, -1, 0}
 
 
 def test_same_seed_same_chain():
@@ -168,3 +170,59 @@ def test_the_lab_spawns_where_the_room_says_and_the_corridor_on_its_lane():
 
     generated = make_chamber(0, (0.0, 0.0), (0.0, 1.0), PARAMS, seed=1)
     assert generated.spawn() == pytest.approx(generated.world(60.0, 0.0))
+
+
+# --- turn cadence -------------------------------------------------------
+# Gravity turning at every single arrow is what made the corridor exhausting
+# to read. Turns now come every few chambers, and the ones in between run
+# straight through.
+
+
+def test_most_chambers_run_straight():
+    chain = ChamberChain(seed=7, params=ChamberParams())
+    chain.ensure_ahead(200)
+    turns = [ch.turn for ch in chain.chambers]
+    assert turns.count(0) > len(turns) * 0.6, "straight chambers must dominate"
+
+
+def test_turns_are_quarter_turns_or_nothing():
+    chain = ChamberChain(seed=3, params=ChamberParams())
+    chain.ensure_ahead(120)
+    assert {ch.turn for ch in chain.chambers} <= {1, -1, 0}
+
+
+def test_the_gap_between_turns_stays_inside_its_bounds():
+    """The point of the cadence: never two turns back to back, and never so
+    long a straight that the corridor stops being a corridor."""
+    params = ChamberParams()
+    for seed in range(20):
+        chain = ChamberChain(seed=seed, params=params)
+        chain.ensure_ahead(300)
+        indices = [ch.index for ch in chain.chambers if ch.turn != 0]
+        assert indices, f"seed {seed} produced no turns at all in 300 chambers"
+        gaps = [b - a for a, b in zip(indices, indices[1:])]
+        for gap in gaps:
+            assert params.turn_gap_min <= gap <= params.turn_gap_max, (
+                f"seed {seed} has a gap of {gap} chambers between turns")
+
+
+def test_the_cadence_is_reproducible_from_the_seed_alone():
+    """S7's validator regenerates the corridor from the seed, so where the
+    turns land cannot depend on how far the player happened to fly."""
+    a = ChamberChain(seed=99, params=ChamberParams())
+    a.ensure_ahead(60)
+    b = ChamberChain(seed=99, params=ChamberParams())
+    for _ in range(60):
+        b.ensure_ahead(1)
+        b.at += 1
+    b.at = 0
+    assert [ch.turn for ch in a.chambers][:40] == [ch.turn for ch in b.chambers][:40]
+
+
+def test_a_straight_chamber_carries_its_direction_through():
+    params = ChamberParams()
+    chain = ChamberChain(seed=11, params=params)
+    chain.ensure_ahead(40)
+    for ch in chain.chambers:
+        if ch.turn == 0:
+            assert ch.next_direction == pytest.approx(ch.direction, abs=1e-12)

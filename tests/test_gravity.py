@@ -85,3 +85,14 @@ def test_settle_puts_gravity_on_an_orientation_with_no_ease():
 def test_vector_scales_the_direction():
     g = GravityState(flip_duration=0.3)
     assert g.vector(500.0) == pytest.approx((0.0, 500.0), abs=1e-12)
+
+
+def test_flipping_by_nothing_is_a_no_op():
+    """Straight chambers cross their seam with turn 0. That must not start an
+    ease to the angle gravity is already at: for flip_duration seconds the
+    state would report itself mid-flip while nothing moved."""
+    g = GravityState(flip_duration=0.3)
+    g.advance(1.0)
+    before = (g.angle, g.target_turns, g.settled)
+    g.flip_by(0)
+    assert (g.angle, g.target_turns, g.settled) == before

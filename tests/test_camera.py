@@ -2,6 +2,7 @@ import math
 
 import pytest
 
+from gravi import config
 from gravi.gravity import GravityState
 from gravi.render.camera import Camera, chambers_in_view
 
@@ -31,17 +32,25 @@ def test_rotation_carries_gravity_onto_screen_down_at_every_step():
         assert (sx, sy) == pytest.approx((0.0, 1.0), abs=1e-9)
 
 
-def test_fixed_camera_does_not_rotate_and_does_not_pan():
-    """Removing rotation is not enough: a fixed camera must have no
-    gravity-driven motion of any kind, so the eye is dead centre and stays
-    there. Leading in the gravity direction panned the view by up to twice the
-    lead distance on every flip, which reads as a moving camera."""
+def test_fixed_camera_does_not_rotate():
+    """Fixed means the world is not turned. It does not mean the eye is
+    centred — see the lead tests below, and amendment A3."""
+    cam = Camera(1280, 720)
+    for angle in (0.0, 0.4, math.pi / 2, math.pi):
+        cam.update(0.0, 0.0, angle=angle, rotating=False)
+        assert cam.to_screen(cam._ox + 100.0, cam._oy) == pytest.approx(
+            (cam.eye[0] + 100.0, cam.eye[1]))
+
+
+def test_a_zero_lead_restores_the_strictly_centred_camera():
+    """A3 reverses 5.2 by making the lead a knob, not by deleting the framing
+    5.2 asked for: lead 0 is still exactly a dead-centre camera that does not
+    move when gravity turns."""
     cam = Camera(1280, 720)
     eyes = []
     for angle in (0.0, 0.4, math.pi / 2, math.pi):
-        cam.update(0.0, 0.0, angle=angle, rotating=False)
+        cam.update(0.0, 0.0, angle=angle, rotating=False, lead=0.0)
         eyes.append(cam.eye)
-        assert cam.to_screen(100.0, 0.0) == pytest.approx((cam.eye[0] + 100.0, cam.eye[1]))
     assert len(set(eyes)) == 1
     assert eyes[0] == (640.0, 360.0)
 
@@ -66,14 +75,14 @@ def test_screen_to_world_round_trips():
 
 def test_the_default_view_is_one_to_one():
     cam = Camera(1280, 720)
-    cam.update(0.0, 0.0, angle=0.0, rotating=False)
+    cam.update(0.0, 0.0, angle=0.0, rotating=False, lead=0.0)
     assert cam.to_screen(100.0, 0.0) == pytest.approx((740.0, 360.0))
     assert cam.scale_length(100.0) == pytest.approx(100.0)
 
 
 def test_a_wider_view_width_scales_the_world_down():
     cam = Camera(1280, 720)
-    cam.update(0.0, 0.0, angle=0.0, rotating=False, view_width=2560.0)
+    cam.update(0.0, 0.0, angle=0.0, rotating=False, view_width=2560.0, lead=0.0)
     # 2560 world units across a 1280px window is half scale, so the point
     # 1280 units to the right lands on the right edge instead of far past it.
     assert cam.to_screen(1280.0, 0.0) == pytest.approx((1280.0, 360.0))
@@ -85,10 +94,10 @@ def test_a_wider_view_brings_a_point_ahead_onto_the_screen():
     cam = Camera(1280, 720)
     ahead = (0.0, 700.0)
 
-    cam.update(0.0, 0.0, angle=0.0, rotating=False)
+    cam.update(0.0, 0.0, angle=0.0, rotating=False, lead=0.0)
     assert cam.to_screen(*ahead)[1] > 720.0
 
-    cam.update(0.0, 0.0, angle=0.0, rotating=False, view_width=2560.0)
+    cam.update(0.0, 0.0, angle=0.0, rotating=False, view_width=2560.0, lead=0.0)
     assert cam.to_screen(*ahead)[1] <= 720.0
 
 
@@ -96,7 +105,7 @@ def test_lengths_scale_with_the_view():
     """Radii are world lengths. If they stayed in pixels, widening the view
     would grow every node relative to the corridor it sits in."""
     cam = Camera(1280, 720)
-    cam.update(0.0, 0.0, angle=0.0, rotating=False, view_width=2560.0)
+    cam.update(0.0, 0.0, angle=0.0, rotating=False, view_width=2560.0, lead=0.0)
     assert cam.scale_length(200.0) == pytest.approx(100.0)
 
 
@@ -107,16 +116,18 @@ def test_screen_to_world_round_trips_when_the_view_is_widened():
     assert cam.to_world(*cam.to_screen(12.0, 34.0)) == pytest.approx((12.0, 34.0))
 
 
-def test_widening_the_view_does_not_pan_the_fixed_camera():
-    """Amendment A1's invariant has to survive the new knob: widening changes
-    how much you can see, never where the camera sits."""
+def test_widening_the_view_never_moves_the_eye():
+    """The two knobs stay independent: view_width changes how much you can see
+    and camera_lead changes where you sit, and neither leaks into the other."""
     cam = Camera(1280, 720)
-    for view_width in (1280.0, 1900.0, 2560.0):
-        for angle in (0.0, 0.4, math.pi):
+    for angle in (0.0, 0.4, math.pi):
+        eyes = set()
+        for view_width in (1280.0, 1900.0, 2560.0):
             cam.update(0.0, 0.0, angle=angle, rotating=False,
-                       view_width=view_width)
-            assert cam.eye == (640.0, 360.0)
-            assert cam.to_screen(0.0, 0.0) == pytest.approx((640.0, 360.0))
+                       view_width=view_width, lead=0.25)
+            eyes.add(cam.eye)
+            assert cam.to_screen(0.0, 0.0) == pytest.approx(cam.eye)
+        assert len(eyes) == 1
 
 
 def test_the_rotating_lead_is_tunable():
@@ -133,12 +144,6 @@ def test_the_lead_is_screen_space_so_the_two_knobs_stay_independent():
     assert cam.eye == pytest.approx((640.0, 216.0))
 
 
-def test_a_lead_never_reaches_the_fixed_camera():
-    """Passing a lead while fixed must do nothing at all, so a preset tuned
-    for the rotating camera cannot start the fixed one panning."""
-    cam = Camera(1280, 720)
-    cam.update(0.0, 0.0, angle=1.2, rotating=False, lead=0.4)
-    assert cam.eye == (640.0, 360.0)
 
 
 def test_the_visible_span_matches_the_one_to_one_window_by_default():
@@ -157,3 +162,64 @@ def test_the_visible_span_widens_for_a_wide_view_of_shallow_chambers():
 
 def test_the_visible_span_never_runs_below_the_first_chamber():
     assert chambers_in_view(0, 1280.0, 1600.0).start == 0
+
+
+# --- the fixed camera leads along gravity (amendment A3) ----------------
+
+
+def test_the_fixed_camera_leads_along_gravity_not_along_screen_up():
+    """5.2 rejected a lead on the fixed camera because a lead fixed to
+    screen-up flew the player into the screen edge as soon as gravity went
+    sideways. Following gravity is what makes it safe: the extra room is always
+    in front of the player, whichever way "in front" currently points."""
+    cam = Camera(1280, 720)
+
+    cam.update(0.0, 0.0, angle=0.0, rotating=False, lead=0.2)     # gravity down
+    assert cam.eye[1] < 360.0 and cam.eye[0] == pytest.approx(640.0)
+
+    cam.update(0.0, 0.0, angle=math.pi / 2, rotating=False, lead=0.2)  # right
+    assert cam.eye[0] < 640.0 and cam.eye[1] == pytest.approx(360.0)
+
+    cam.update(0.0, 0.0, angle=-math.pi / 2, rotating=False, lead=0.2)  # left
+    assert cam.eye[0] > 640.0 and cam.eye[1] == pytest.approx(360.0)
+
+    cam.update(0.0, 0.0, angle=math.pi, rotating=False, lead=0.2)   # gravity up
+    assert cam.eye[1] > 360.0 and cam.eye[0] == pytest.approx(640.0)
+
+
+def test_the_lead_gives_the_same_share_of_the_travel_axis_either_way():
+    """A 16:9 window already puts more world ahead when you travel sideways
+    than when you fall, which is why up-and-down chambers read worse. The lead
+    is a fraction of the axis being travelled, so the framing rule is the same
+    in both: half the axis plus the lead."""
+    cam = Camera(1280, 720)
+
+    cam.update(0.0, 0.0, angle=0.0, rotating=False, lead=0.25)
+    down_ahead = (720.0 - cam.eye[1]) / 720.0
+
+    cam.update(0.0, 0.0, angle=math.pi / 2, rotating=False, lead=0.25)
+    right_ahead = (1280.0 - cam.eye[0]) / 1280.0
+
+    assert down_ahead == pytest.approx(right_ahead)
+    assert down_ahead == pytest.approx(0.75)
+
+
+def test_the_fixed_eye_does_not_drift_while_gravity_is_settled():
+    """The pan A3 accepts is the one that happens DURING a flip. A settled
+    gravity must hold the eye perfectly still, or the camera is just moving."""
+    cam = Camera(1280, 720)
+    cam.update(0.0, 0.0, angle=math.pi / 2, rotating=False, lead=0.3)
+    first = cam.eye
+    for _ in range(10):
+        cam.update(50.0, -20.0, angle=math.pi / 2, rotating=False, lead=0.3)
+        assert cam.eye == first
+
+
+def test_the_lead_never_puts_the_player_off_screen():
+    cam = Camera(1280, 720)
+    high = config.TUNABLES["camera_lead"].hi
+    for angle in (0.0, math.pi / 4, math.pi / 2, math.pi, -math.pi / 2):
+        for rotating in (True, False):
+            cam.update(0.0, 0.0, angle=angle, rotating=rotating, lead=high)
+            assert 0.0 < cam.eye[0] < 1280.0
+            assert 0.0 < cam.eye[1] < 720.0

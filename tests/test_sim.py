@@ -400,21 +400,58 @@ def test_crossing_the_arrow_advances_and_turns_gravity():
     assert w.gravity_state.direction() == pytest.approx(w.chain.current.direction, abs=1e-9)
 
 
-def test_entry_lateral_offset_is_always_zero():
-    """Spec 4.3: the old lateral axis becomes the new depth axis, so where you
-    crossed becomes how deep you start — and offset is always exactly zero."""
+def _seek_chamber(w, turning: bool):
+    """Walk the chain to the next chamber that does (or does not) turn.
+
+    Which chambers turn is a property of the run's cadence now, so a test that
+    wants one of each has to go and find them rather than assume chamber 0.
+    """
+    for _ in range(80):
+        if (w.chain.current.turn != 0) == turning:
+            return w.chain.current
+        w.chain.advance()
+    raise AssertionError(f"no chamber with turning={turning} in 80")
+
+
+def test_entry_lateral_offset_is_zero_at_a_turn():
+    """Spec 4.3: at a turn the old lateral axis becomes the new depth axis, so
+    where you crossed becomes how deep you start — and offset is exactly
+    zero."""
     for u in (-300.0, -50.0, 0.0, 120.0, 400.0):
         w = make_world(flip_duration=0.0)
-        ch = w.chain.current
+        ch = _seek_chamber(w, turning=True)
+        start = w.chain.at
         w.x, w.y = ch.world(ch.params.depth - 1.0, u)
         w.vx, w.vy = ch.direction[0] * 600.0, ch.direction[1] * 600.0
         for _ in range(10):
             w.step(Charge.NEUTRAL)
-            if w.chain.at == 1:
+            if w.chain.at > start:
                 break
         assert not w.dead, u
         _, offset = w.chain.current.local(w.x, w.y)
         assert offset == pytest.approx(0.0, abs=1e-9), u
+
+
+def test_a_straight_seam_carries_the_offset_through():
+    """A chamber that does not turn is a corridor that keeps going, so crossing
+    its seam must not shunt the player back onto the centre line. 4.3's
+    zero-offset guarantee is a property of TURNS specifically — which is also
+    why the lane-clearance guarantee matters most at a turn, where every player
+    arrives on the centre line."""
+    for u in (-300.0, 120.0):
+        w = make_world(flip_duration=0.0)
+        ch = _seek_chamber(w, turning=False)
+        start = w.chain.at
+        w.x, w.y = ch.world(ch.params.depth - 1.0, u)
+        w.vx, w.vy = ch.direction[0] * 600.0, ch.direction[1] * 600.0
+        for _ in range(10):
+            w.step(Charge.NEUTRAL)
+            if w.chain.at > start:
+                break
+        assert w.chain.at > start, u
+        assert not w.dead, u
+        _, offset = w.chain.current.local(w.x, w.y)
+        assert offset == pytest.approx(u, abs=1e-9), u
 
 
 def test_crossing_outside_the_span_kills():
@@ -453,10 +490,26 @@ def test_being_thrown_back_out_of_the_entrance_kills():
 
 
 def test_core_contact_kills_in_a_neighbouring_chamber_too():
+    """Rings and cores reach across the seam, so the chamber next door is
+    lethal while you are still in this one.
+
+    The node is planted just past the seam deliberately. Dropping the player
+    onto a generated node of the next chamber instead put them a whole chamber
+    depth beyond the arrow, where they died of leaving the corridor — the
+    assertion passed without a core ever being touched.
+    """
     w = make_world(flip_duration=0.0)
-    node = w.chain.by_index(1).nodes[0]
-    w.x, w.y = node.x, node.y
+    ch = w.chain.current
+    just_past = ch.world(ch.params.depth + 5.0, 0.0)
+    w.chain.chambers[1] = replace(
+        w.chain.by_index(1),
+        nodes=(Node(just_past[0], just_past[1], 200.0, 18.0),))
+
+    w.x, w.y = ch.world(ch.params.depth - 10.0, 0.0)
+    w.vx = w.vy = 0.0
     w.step(Charge.NEUTRAL)
+
+    assert w.chain.at == 0, "must still be in this chamber, not through the arrow"
     assert w.dead
 
 

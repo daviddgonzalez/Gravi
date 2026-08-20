@@ -35,12 +35,18 @@ Two things follow from scale being a draw-time transform:
   Those are legibility, not geometry, and a 2px ring that becomes sub-pixel is
   just a ring you cannot see.
 
-The scale deliberately does NOT give the fixed camera a lead. Widening shows
-more in every direction at once and moves nothing, which is the only framing
-amendment A1 allows the fixed camera (slice 2 spec section 5.2): a lead has to
-point somewhere, the only "somewhere" available is the gravity direction, and
-swinging it on every flip is the pan A1 exists to forbid. The `lead` argument
-is the rotating camera's, where gravity is already a fixed point on screen.
+`camera_lead` sits the eye back so that more of the screen is in front of the
+player than behind. Both cameras have one now (amendment A3): the rotating
+camera's points along screen-up, because gravity is always screen-down there,
+and the fixed camera's follows the gravity vector itself.
+
+Slice 2 spec 5.2 originally forbade a lead on the fixed camera. What it
+actually measured was a lead pinned to SCREEN-UP while gravity was free to
+point anywhere, which flew the player blind into the edge of the screen. A lead
+that follows gravity cannot do that. What survives of the objection is that the
+eye now moves while gravity eases from one quarter to the next — accepted
+deliberately, because turns come every few chambers rather than at every arrow,
+and because `camera_lead = 0` restores 5.2's strictly centred camera exactly.
 """
 
 from __future__ import annotations
@@ -49,7 +55,9 @@ import math
 
 from .. import config
 
-LEAD_FRACTION = 0.12
+# Mirrors config.TUNABLES["camera_lead"], for callers that do not carry a
+# tunables dict. main.py always passes the live value.
+LEAD_FRACTION = 0.22
 
 
 class Camera:
@@ -84,16 +92,24 @@ class Camera:
         self.scale = (self.width / view_width
                       if view_width is not None and view_width > 0.0 else 1.0)
         if rotating:
-            # Gravity is a fixed point on screen, so the lead can be too. It is
-            # a fraction of the SCREEN, not of the world, which keeps it
-            # independent of the view scale.
+            # Gravity is a fixed point on screen, so the lead can be too.
             self.eye = (self.width / 2.0,
                         self.height / 2.0 - self.height * lead)
         else:
-            # Dead centre: equal visibility in every direction, and nothing
-            # about the framing moves when gravity turns. `lead` is ignored
-            # here on purpose — see the module docstring.
-            self.eye = (self.width / 2.0, self.height / 2.0)
+            # The lead follows GRAVITY, which is what makes it safe on a
+            # camera that does not rotate: the room is always in front of the
+            # player, whichever way in front currently points. A lead pinned to
+            # screen-up is the one 5.2 rejected, and rightly — it flew the
+            # player into the screen edge the moment gravity went sideways.
+            #
+            # Scaled per axis, so the framing rule is the same whichever way
+            # you travel: half the axis you are travelling along, plus the
+            # lead. A 16:9 window otherwise puts far more world ahead of a
+            # sideways run than of a fall, which is exactly why up-and-down
+            # chambers read worse than left-and-right ones.
+            gx, gy = math.sin(angle), math.cos(angle)
+            self.eye = (self.width / 2.0 - gx * self.width * lead,
+                        self.height / 2.0 - gy * self.height * lead)
 
     def to_screen(self, x: float, y: float) -> tuple[float, float]:
         dx = (x - self._ox) * self.scale

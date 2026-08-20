@@ -172,7 +172,7 @@ def test_a_widened_view_draws_a_smaller_node_ring(screen):
     view is widened — and the ring IS the ruleset (spec section 7)."""
     node = Node(400.0, 300.0, 120.0, 14.0)
     cam = Camera(800, 600)
-    cam.update(400.0, 300.0, angle=0.0, rotating=False, view_width=1600.0)
+    cam.update(400.0, 300.0, angle=0.0, rotating=False, view_width=1600.0, lead=0.0)
 
     screen.fill(config.COLOR_BG)
     neon.draw_node(screen, node, is_active=False, camera=cam)
@@ -185,12 +185,33 @@ def test_a_widened_view_draws_a_smaller_node_ring(screen):
 def test_a_widened_view_draws_a_smaller_player(screen):
     cam = Camera(800, 600)
 
-    cam.update(400.0, 300.0, angle=0.0, rotating=False, view_width=1600.0)
+    cam.update(400.0, 300.0, angle=0.0, rotating=False, view_width=1600.0, lead=0.0)
     screen.fill(config.COLOR_BG)
     neon.draw_player(screen, 400.0, 300.0, 20.0, cam)
     widened = brightness(screen, 412, 300)
 
-    cam.update(400.0, 300.0, angle=0.0, rotating=False)
+    cam.update(400.0, 300.0, angle=0.0, rotating=False, lead=0.0)
     screen.fill(config.COLOR_BG)
     neon.draw_player(screen, 400.0, 300.0, 20.0, cam)
     assert brightness(screen, 412, 300) > widened
+
+
+def test_a_straight_chamber_draws_no_arrow(screen):
+    """The arrow means gravity turns here. Now that most chambers run straight,
+    drawing one at every seam would teach the player to ignore arrows, and the
+    one that does turn gravity is the one they would then miss."""
+    from gravi.chamber import ChamberParams, make_chamber
+
+    params = ChamberParams(depth=400.0, half_width=150.0)
+    straight = make_chamber(0, (400.0, 100.0), (0.0, 1.0), params, seed=1, turn=0)
+    turning = make_chamber(0, (400.0, 100.0), (0.0, 1.0), params, seed=1, turn=1)
+
+    screen.fill(config.COLOR_BG)
+    neon.draw_arrow(screen, straight, IDENTITY)
+    a, b = straight.arrow_endpoints()
+    middle = ((a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0)
+    assert peak_brightness(screen, *middle) == brightness(screen, 400, 300)
+
+    screen.fill(config.COLOR_BG)
+    neon.draw_arrow(screen, turning, IDENTITY)
+    assert peak_brightness(screen, *middle) > brightness(screen, 400, 300)

@@ -46,6 +46,27 @@ not, and the set of chambers drawn — nodes included — is derived from the vi
 so a widened view can never show an outline with no node field in it. A1's
 no-pan invariant is untouched: the fixed camera still gets no lead.
 
+**Amendment A3 — the fixed camera leads along gravity** (slice 2 spec §5.2,
+reversed). A2's wider view was not what was wanted; room *in front* was. The
+lead follows the gravity vector, which is why it is safe on a camera that does
+not rotate, and it is scaled per axis so falling and running sideways get the
+same share of the travel axis ahead. `camera_lead = 0` restores the old
+strictly centred camera. `view_width` reverted to 1:1.
+
+**Amendment A4 — gravity turns every 3–7 chambers**, not every one. Chambers
+between run straight and draw no arrow. Flip frequency is now depth × cadence.
+§4.3's zero-offset entry is a property of turns only; straight seams carry the
+player's offset through.
+
+**A test that was passing for the wrong reason.**
+`test_core_contact_kills_in_a_neighbouring_chamber_too` dropped the player onto
+a generated node of the *next* chamber. With every chamber turning, that put
+them outside the corridor and they died of leaving it — the assertion passed
+without a core ever being touched. Straight chambers put the same node a full
+depth further along the same axis, which made the crossing back-up rewind the
+player 1253 units and exposed it. It now plants a node just past the seam and
+asserts the player is still in the current chamber when it kills them.
+
 **Two generator/sim corrections** found by the tests rather than by play:
 
 1. Sampling node offsets uniformly across the chamber's half-width produced
@@ -76,8 +97,9 @@ defaults, which are the prototype's tuned values:
 | `chamber_depth` | 1600.0 | ~8 gravity swaps/minute in the prototype (1150 gave ~26 and read as too hard) |
 | `chamber_half_width` | 460.0 | Untuned, straight from the prototype |
 | `gravity` | 500.0 | Renamed from `gravity_y`; a magnitude now |
-| `view_width` | 2200.0 | Provisional. 1:1 (1280) was reported as not showing enough corridor ahead to plan against, twice, during the playtest; raised to 2200 and bound to `-`/`=` so the sweep can happen while flying. Still unsettled |
-| `camera_lead` | 0.12 | Was a hard-coded constant; rotating camera only |
+| `view_width` | 1280.0 | 1:1. Raised to 2200 on 2026-08-19 and reversed the same day (A3): a wider view was not what was asked for. Bound to `-`/`=` for sweeping |
+| `camera_lead` | 0.22 | Room in front, on BOTH cameras since A3. Untuned |
+| `turn_gap_min` / `turn_gap_max` | 3 / 7 | Amendment A4. Chosen from play, not swept |
 
 Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,
 `speed_max` 600.0, `fall_speed_max` 600.0) are **unchanged from slice 1**. See
@@ -111,9 +133,12 @@ Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,
    values into `presets/default.json`. Note that `F5` writes
    `presets/current.json` (the gitignored scratch slot), so the winning numbers
    have to be copied across deliberately.
-5. Sweep `view_width` — and, on the rotating camera, `camera_lead` — and answer
-   A2's open question: how much world has to be on screen before a grab two
-   chambers away is plannable rather than a surprise.
+5. Sweep `camera_lead` (room in front) and `view_width` (room in every
+   direction) and answer A2/A3's open question: how much corridor has to be
+   ahead of the player before a grab two chambers away is plannable rather than
+   a surprise. Sweep `turn_gap_min`/`turn_gap_max` too — A4 set them from play
+   at 3–7 without a sweep, and they now set flip frequency together with
+   `chamber_depth`.
 6. Confirm the fixed camera (now the default) is usable, and say whether the
    rotating one is still worth shipping behind `C`. Because the fixed camera may
    not lead (A1, A2), widening the view is the only room-ahead it gets — say
@@ -129,7 +154,8 @@ Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,
 - The playtest that produced amendment A1 was on `proto/terrain-demo.html`,
   not on this build. Whether the pygame build reads the same way is unknown.
 - `chamber_half_width` has never been tuned by anyone, in any build.
-- Neither field-of-view knob has been tuned by anyone (amendment A2). The unit
+- Neither field-of-view knob has been tuned by anyone (A2, A3), and the turn
+  cadence (A4) was chosen from play rather than swept. The unit
   tests prove the transform is correct and that widening cannot pan the fixed
   camera; nothing proves a given width is *readable*.
 - The browser build was hung behind a static server that 404s `/cdn/` until

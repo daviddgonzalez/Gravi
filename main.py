@@ -44,8 +44,12 @@ ADJUST_REPEAT_INTERVAL = 0.05  # seconds between notches while sweeping
 
 
 def chamber_params(tunables: dict[str, float]) -> ChamberParams:
+    low = int(tunables["turn_gap_min"])
     return ChamberParams(depth=tunables["chamber_depth"],
-                         half_width=tunables["chamber_half_width"])
+                         half_width=tunables["chamber_half_width"],
+                         turn_gap_min=low,
+                         # Swept live, so the two can cross over mid-sweep.
+                         turn_gap_max=max(low, int(tunables["turn_gap_max"])))
 
 
 def build_world(seed: int, tunables: dict[str, float], chain=None) -> World:
