@@ -29,7 +29,7 @@ import math
 from .chamber import ChamberChain
 from .config import PHYS_DT
 from .field import Charge, FieldParams, Node, charge_force
-from .gravity import QUARTER, GravityState
+from .gravity import QUARTER, GravityMode, GravityState, apply_gravity
 
 
 class World:
@@ -44,6 +44,8 @@ class World:
         player_radius: float,
         speed_max: float,
         fall_speed_max: float = math.inf,
+        gravity_mode: GravityMode = GravityMode.ALONG,
+        rigid_rope: bool = False,
         dt: float = PHYS_DT,
     ) -> None:
         self.chain = chain
@@ -53,6 +55,10 @@ class World:
         self.player_radius = player_radius
         self.speed_max = speed_max
         self.fall_speed_max = fall_speed_max
+        # Playtest experiments (2026-08-20 design doc). Both default to the
+        # shipped behaviour, so a World built without them is unchanged.
+        self.gravity_mode = gravity_mode
+        self.rigid_rope = rigid_rope
         self.dt = dt
 
         self.x = 0.0
@@ -64,6 +70,8 @@ class World:
         self.distance = 0.0
         self.cleared = 0
         self._latch: tuple[int, int] | None = None
+        self._rope: tuple[int, int] | None = None    # which latch the rope is on
+        self._rope_radius: float | None = None
         self.reset()
 
     def reset(self) -> None:
@@ -79,6 +87,8 @@ class World:
         self.distance = 0.0
         self.cleared = 0
         self._latch = None
+        self._rope = None
+        self._rope_radius = None
         self.gravity_state.settle(
             round(math.atan2(ch.direction[0], ch.direction[1]) / QUARTER))
 
@@ -167,22 +177,28 @@ class World:
             return
 
         gx, gy = self.gravity_state.direction()
-        # Mass is fixed at 1.0, so force == acceleration.
-        ax = gx * self.gravity
-        ay = gy * self.gravity
-
         node = self._update_latch(charge)
-        if node is not None:
+        rigid = (self.rigid_rope and node is not None
+                 and charge is Charge.ATTRACT)
+        self._update_rope(node, rigid)
+
+        # Mass is fixed at 1.0, so force == acceleration. The node force is
+        # integrated first and gravity second, because PERP_VELOCITY rotates
+        # the finished velocity and has to see the one the node force produced.
+        if node is not None and not rigid:
             # Only attract is allowed to act past the rim; a latched repel is
             # inside its ring by construction, so the cutoff is a no-op there
             # and left in place as a guard rather than an exception.
             fx, fy = charge_force(self.x, self.y, node, charge, self.params,
                                   ignore_radius=charge is Charge.ATTRACT)
-            ax += fx
-            ay += fy
+            self.vx += fx * self.dt
+            self.vy += fy * self.dt
+        # A rigid rope supplies exactly the tension its constraint needs, so
+        # the spring is NOT applied on top: two mechanisms pulling on one
+        # radius would just fight.
 
-        self.vx += ax * self.dt
-        self.vy += ay * self.dt
+        self.vx, self.vy = apply_gravity(self.gravity_mode, (gx, gy),
+                                         self.vx, self.vy, self.gravity, self.dt)
 
         # Fall and carry speed are bounded separately, never as one |v| clamp,
         # and in GRAVITY-RELATIVE axes. An isotropic clamp rescales the whole
@@ -200,8 +216,11 @@ class World:
         self.vx = fall * gx + carry * px
         self.vy = fall * gy + carry * py
 
-        nx = self.x + self.vx * self.dt
-        ny = self.y + self.vy * self.dt
+        if rigid:
+            nx, ny = self._rotate_on_rope(node)
+        else:
+            nx = self.x + self.vx * self.dt
+            ny = self.y + self.vy * self.dt
         self.distance += math.hypot(nx - self.x, ny - self.y)
         self.x, self.y = nx, ny
         self.elapsed += self.dt
@@ -209,6 +228,58 @@ class World:
         self._check_bounds()
         if not self.dead:
             self._check_cores()
+
+    def _update_rope(self, node: Node | None, rigid: bool) -> None:
+        """Record the radius at the moment of the grab, and forget it the
+        moment the rope is gone. Keyed on the latch, so re-grabbing a different
+        node measures a new radius rather than inheriting the old one."""
+        if not rigid:
+            self._rope = None
+            self._rope_radius = None
+            return
+        if self._rope != self._latch:
+            self._rope = self._latch
+            self._rope_radius = math.hypot(node.x - self.x, node.y - self.y)
+
+    def _rotate_on_rope(self, node: Node) -> tuple[float, float]:
+        """Advance along the held circle by an exact rotation about the node,
+        rather than an Euler step reprojected onto the circle afterward.
+
+        Deviation from the design doc's literal "project position, subtract
+        radial velocity" wording: doing that with the current position (i.e.
+        stripping the velocity's component along the radial direction found
+        *after* the straight-line step) shrinks the tangential speed by
+        cos(theta) every step, the same drift `apply_gravity`'s docstring
+        already diagnoses for PERP_VELOCITY. At the corridor's own scale
+        (theta ~0.01 rad/step) that decayed a held swing's speed by ~12% over
+        the ten seconds `test_a_rigid_rope_is_uniform_circular_motion`
+        specifies to hold to 1e-6 — confirmed by running the literal
+        algorithm before switching to this one. Rotating position and
+        velocity together by the same angle is speed- and radius-preserving
+        by construction, at any step size, which is exactly why
+        PERP_VELOCITY is implemented as a rotation rather than a perpendicular
+        force. The radial component removed here is the one true to the
+        design intent: it still zeroes out on the first grabbed step (see
+        `test_a_rigid_rope_strips_the_radial_velocity`) and does no work.
+        """
+        r = self._rope_radius
+        dx = self.x - node.x
+        dy = self.y - node.y
+        ux, uy = dx / r, dy / r
+        radial = self.vx * ux + self.vy * uy
+        self.vx -= radial * ux
+        self.vy -= radial * uy
+        speed = math.hypot(self.vx, self.vy)
+        if speed < 1e-9:
+            return self.x, self.y       # no tangential motion to rotate by
+        theta = (speed / r) * self.dt
+        if dx * self.vy - dy * self.vx < 0.0:
+            theta = -theta               # match the current sense of travel
+        c, s = math.cos(theta), math.sin(theta)
+        nx = node.x + dx * c - dy * s
+        ny = node.y + dx * s + dy * c
+        self.vx, self.vy = self.vx * c - self.vy * s, self.vx * s + self.vy * c
+        return nx, ny
 
     def _check_bounds(self) -> None:
         ch = self.chain.current

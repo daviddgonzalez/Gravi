@@ -6,6 +6,7 @@ import pytest
 from gravi.chamber import ChamberChain, ChamberParams
 from gravi.field import Charge, FieldParams, Node
 from gravi.gravity import GravityState
+from gravi.gravity import GravityMode
 from gravi.sim import World, charge_from_input
 
 PARAMS = FieldParams(k_attract=8.0, k_repel=12.0, force_max=1e9)
@@ -577,3 +578,106 @@ def test_crossing_a_looping_chamber_puts_the_player_back_at_its_entrance():
     t, _ = w.chain.current.local(w.x, w.y)
     assert t == pytest.approx(0.0, abs=1e-9)      # back at the entrance line
     assert w.gravity_state.target_turns == 0      # and gravity never turned
+
+
+def test_a_rigid_rope_is_uniform_circular_motion():
+    """A rope does no work. With gravity off, that means radius AND speed both
+    hold — which is the property that separates a constraint from a force."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    w.vx, w.vy = 0.0, 260.0
+
+    radii, speeds = [], []
+    for _ in range(2400):                      # ten seconds
+        w.step(Charge.ATTRACT)
+        assert not w.dead
+        radii.append(math.hypot(w.x - node.x, w.y - node.y))
+        speeds.append(math.hypot(w.vx, w.vy))
+
+    assert max(radii) - min(radii) < 1e-6, (min(radii), max(radii))
+    assert max(speeds) - min(speeds) < 1e-6, (min(speeds), max(speeds))
+    assert radii[0] == pytest.approx(100.0)
+
+
+def test_a_rigid_rope_strips_the_radial_velocity():
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    w.vx, w.vy = 200.0, 0.0                    # straight at the node
+
+    w.step(Charge.ATTRACT)
+
+    dx, dy = w.x - node.x, w.y - node.y
+    distance = math.hypot(dx, dy)
+    radial = (w.vx * dx + w.vy * dy) / distance
+    assert radial == pytest.approx(0.0, abs=1e-9)
+
+
+def test_releasing_a_rigid_rope_restores_free_flight():
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    w.vx, w.vy = 0.0, 260.0
+    for _ in range(120):
+        w.step(Charge.ATTRACT)
+    held = math.hypot(w.x - node.x, w.y - node.y)
+
+    for _ in range(120):
+        w.step(Charge.NEUTRAL)
+
+    assert math.hypot(w.x - node.x, w.y - node.y) > held + 50.0
+
+
+def test_a_rigid_rope_does_not_apply_to_a_repel():
+    """A repel is a push, not an attachment."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    start = math.hypot(w.x - node.x, w.y - node.y)
+
+    for _ in range(120):
+        w.step(Charge.REPEL)
+
+    assert math.hypot(w.x - node.x, w.y - node.y) > start + 10.0
+
+
+def test_perp_velocity_mode_does_not_feed_the_player_speed():
+    w = lab_world(gravity=500.0, nodes=[], spawn=(400.0, 400.0))
+    w.gravity_mode = GravityMode.PERP_VELOCITY
+    w.vx, w.vy = 300.0, 0.0
+    start = math.hypot(w.vx, w.vy)
+
+    for _ in range(1200):
+        w.step(Charge.NEUTRAL)
+        if w.dead:
+            break
+
+    assert math.hypot(w.vx, w.vy) == pytest.approx(start, rel=1e-6)
+
+
+def test_a_gravity_swap_leaves_the_velocity_alone():
+    """Already true, and pinned here because nothing asserted it: crossing an
+    arrow changes the FIELD, never the player's velocity vector. It reads like
+    a bug to someone tidying up later."""
+    w = make_world(flip_duration=0.0)
+    ch = _seek_chamber(w, turning=True)
+    start = w.chain.at
+    w.x, w.y = ch.world(ch.params.depth - 1.0, 40.0)
+    w.vx = ch.direction[0] * 500.0 + ch.perp[0] * 220.0
+    w.vy = ch.direction[1] * 500.0 + ch.perp[1] * 220.0
+    before = (w.vx, w.vy)
+    before_gravity = w.gravity_state.direction()
+
+    for _ in range(10):
+        w.step(Charge.NEUTRAL)
+        if w.chain.at > start:
+            break
+
+    assert w.chain.at > start, "the test needs an actual crossing"
+    # One step of gravity is all that may have changed it, and only along the
+    # OLD gravity axis — the vector is never rotated with the field.
+    gx, gy = before_gravity
+    step = 500.0 / 240.0
+    assert w.vx == pytest.approx(before[0] + gx * step, abs=1e-6)
+    assert w.vy == pytest.approx(before[1] + gy * step, abs=1e-6)
