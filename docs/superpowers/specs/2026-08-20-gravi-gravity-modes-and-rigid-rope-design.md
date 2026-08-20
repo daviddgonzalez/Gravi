@@ -140,6 +140,39 @@ Three decisions worth stating:
 The constraint does no work: with gravity off, a rigid latch is uniform
 circular motion, and that is the property to test it by.
 
+### 3.1 What a mode does while the rope is held
+
+**While a rigid rope is held, gravity is applied as a force increment, never as
+a rotation of the whole velocity vector.** Added 2026-08-20 after a review found
+`PERP_VELOCITY` and the rope bleeding energy into each other: the mode rotates
+the velocity about the origin, which injects a component that is radial relative
+to the *node*, and the rope then strips it — every step. Two individually
+speed-preserving operations, composed, leaked 260 px/s down to 10 over seventy
+seconds while the radius stayed pinned.
+
+With gravity as a force, each mode falls out cleanly:
+
+- `ALONG` and `PERP_CORRIDOR` are forces already. The rope absorbs the radial
+  part of the increment and the tangential part accelerates the swing — correct
+  pendulum behaviour, and no leak, because what gets projected is a small
+  increment rather than the whole velocity.
+- `PERP_VELOCITY`'s force is perpendicular to the player's velocity. On a rope
+  the velocity is tangential, so that force is *always exactly radial*, so the
+  rope absorbs all of it and **gravity does nothing while you are attached**.
+  You coast the circle at the speed you brought into it.
+
+That last one is a real rule of the game rather than an accident: a steering
+force cannot steer you while the rope decides your direction. Worth watching in
+the playtest — it means a rigid rope in `PERP_VELOCITY` is a way to *bank* speed
+against gravity.
+
+**A rope shorter than a millimetre is not a rope.** Grabbing at the node's exact
+centre divided by zero; a radius of ~1e-6 gave an angular rate of ~1e6 rad/step
+and aliased the position into nonsense. Below a 1e-3 radius the rope is ignored
+for that step. `field._EPSILON` (1e-9) is deliberately NOT reused: it guards a
+force that is separately capped by `force_max`, whereas the rope's angular rate
+has no cap at all.
+
 ## 4. Velocity across a gravity swap
 
 Already the behaviour, and this exists to keep it that way. Crossing an arrow
