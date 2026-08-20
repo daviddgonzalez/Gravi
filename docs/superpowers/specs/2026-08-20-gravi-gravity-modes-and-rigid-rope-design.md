@@ -242,3 +242,39 @@ cover both an added force and a rotation without callers knowing which is which.
 - Does a rigid rope make the swing more controllable, or just more rigid?
 - Do the modes interact with the turn cadence (A4) — is a straight run under
   `perp-corridor` a corridor you cross sideways?
+
+## 8. Amendment — 2026-08-20 playtest verdict
+
+The author played both experiments today. Result: **the rigid rope wins and
+is now the default.** `ALONG` stays the default gravity mode — the two perp
+modes were not adopted, and remain reachable behind `G` exactly as before.
+
+Consequences:
+
+- `World(rigid_rope=...)` now defaults to `True`. The spring is the option,
+  not the shipped behaviour: pass `rigid_rope=False`, or reach it in-game.
+- `T` inverts its sense. Before, `T` toggled the rope ON, away from a
+  spring default. Now `T` toggles it OFF, TO the spring — the key is
+  unchanged, only which state is "resting" moved.
+- §3's numbered decisions and §3.1 are otherwise unaffected: attract-only,
+  no spring force applied while rigid, gravity-as-force-increment while
+  held, and the near-zero-radius guard all describe the rope exactly as it
+  now ships.
+- **Core spec §2.2 amendment.** That section states the attract rope "holds
+  past the rim" as a rule of the game. As of this verdict, that rule is a
+  property of the SPRING only. A rigid rope's radius is fixed at the moment
+  of the grab and cannot grow at all, rim or no rim, so "holding past the
+  rim" has no rigid analogue to hold or violate — §3, point 3 already said
+  as much ("moot… because the radius cannot grow past the rim in the first
+  place"), and this amendment is what promotes that from an aside about an
+  experiment to the actual interaction between two shipped rules: the core
+  spec's rope rule and this doc's rigid rope are no longer both describing
+  the same default mechanism. The core spec text itself is unchanged — this
+  is a record of how it now composes with a sibling document, not an edit
+  to it.
+- Tests written against "the rope holds past the rim" (slice 1's
+  `test_latch_survives_leaving_the_influence_radius`) keep asserting exactly
+  that, now explicitly against the spring (`rigid_rope=False`) rather than
+  against whatever the World default happens to be — because the rule they
+  encode is the spring's rule, and the spring is still a real, playable
+  mode.

@@ -100,6 +100,7 @@ defaults, which are the prototype's tuned values:
 | `view_width` | 1280.0 | 1:1. Raised to 2200 on 2026-08-19 and reversed the same day (A3): a wider view was not what was asked for. Bound to `-`/`=` for sweeping |
 | `camera_lead` | 0.22 | Room in front, on BOTH cameras since A3. Untuned |
 | `turn_gap_min` / `turn_gap_max` | 3 / 7 | Amendment A4. Chosen from play, not swept |
+| `rigid_rope` | `True` | Not a tunable, a `World` default. Playtested 2026-08-20 against the spring (the 2026-08-20 gravity-modes-and-rigid-rope doc's experiment); the rigid rope won. `ALONG` stayed the winning gravity mode. The spring is still reachable behind `T` |
 
 Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,
 `speed_max` 600.0, `fall_speed_max` 600.0) are **unchanged from slice 1**. See

@@ -57,7 +57,7 @@ class World:
         speed_max: float,
         fall_speed_max: float = math.inf,
         gravity_mode: GravityMode = GravityMode.ALONG,
-        rigid_rope: bool = False,
+        rigid_rope: bool = True,
         dt: float = PHYS_DT,
     ) -> None:
         self.chain = chain
@@ -67,8 +67,12 @@ class World:
         self.player_radius = player_radius
         self.speed_max = speed_max
         self.fall_speed_max = fall_speed_max
-        # Playtest experiments (2026-08-20 design doc). Both default to the
-        # shipped behaviour, so a World built without them is unchanged.
+        # Playtest experiments (2026-08-20 design doc), played the same day.
+        # ALONG stayed the winning gravity mode, so gravity_mode still defaults
+        # to it unchanged. The rope did not: the rigid rope won and is now the
+        # shipped behaviour, so a World built without an explicit rigid_rope
+        # argument comes out rigid. The spring is the option now, reachable
+        # behind `T` (main.py) or by passing rigid_rope=False here.
         self.gravity_mode = gravity_mode
         self.rigid_rope = rigid_rope
         self.dt = dt

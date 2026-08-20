@@ -26,7 +26,15 @@ def chain_with(nodes, params=None):
 
 def make_world(nodes=(), flip_duration=0.3, gravity=500.0, spawn=None,
                chamber_params=None, player_radius=7.0, speed_max=600.0,
-               fall_speed_max=600.0):
+               fall_speed_max=600.0, rigid_rope=False):
+    # rigid_rope defaults to False (the spring) here even though World itself
+    # now defaults to True (the rigid rope, played and adopted 2026-08-20).
+    # Every "slice 1 regressions" test below this point was written against
+    # the spring's rules — the rope holding past the rim, k*r tightening the
+    # further out you stretch — and the spring is still a real mode behind
+    # `T`, so these tests must keep exercising it explicitly rather than
+    # silently starting to test the rigid rope's different rules instead. The
+    # rope tests further down opt into rigid_rope=True by hand.
     w = World(
         chain=chain_with(nodes, chamber_params),
         params=PARAMS,
@@ -35,6 +43,7 @@ def make_world(nodes=(), flip_duration=0.3, gravity=500.0, spawn=None,
         player_radius=player_radius,
         speed_max=speed_max,
         fall_speed_max=fall_speed_max,
+        rigid_rope=rigid_rope,
     )
     if spawn is not None:
         w.x, w.y = spawn
@@ -42,12 +51,13 @@ def make_world(nodes=(), flip_duration=0.3, gravity=500.0, spawn=None,
 
 
 def lab_world(gravity=0.0, spawn=(300.0, 400.0), nodes=None,
-              speed_max=1e9, fall_speed_max=1e9):
+              speed_max=1e9, fall_speed_max=1e9, rigid_rope=False):
     """Slice 1's `make_world`, on one wide chamber instead of a room."""
     return make_world(
         nodes=nodes if nodes is not None else [Node(400.0, 400.0, 250.0, 18.0)],
         gravity=gravity, spawn=spawn, chamber_params=WIDE, player_radius=9.0,
-        speed_max=speed_max, fall_speed_max=fall_speed_max)
+        speed_max=speed_max, fall_speed_max=fall_speed_max,
+        rigid_rope=rigid_rope)
 
 
 # --- slice 1 regressions, ported onto the chain ---------------------------
@@ -186,7 +196,12 @@ def test_upward_speed_is_not_capped_by_the_fall_limit():
 
 
 def test_latch_survives_leaving_the_influence_radius():
-    """The rope does not snap at the rim — it holds until the player lets go."""
+    """This is a SPRING test: the spring rope does not snap at the rim — it
+    holds until the player lets go, stretching past the ring on `F = k*r`. A
+    rigid rope has no such property to test — its radius cannot grow past the
+    rim in the first place (design doc §3, point 3) — so this exercises
+    `lab_world`'s spring default (`rigid_rope=False`) on purpose, not the
+    shipped default."""
     node = Node(400.0, 400.0, 150.0, 5.0)
     w = lab_world(nodes=[node])
     # Orbits under F = k*r are bound, with far semi-axis v/sqrt(k). At k=8
@@ -863,3 +878,21 @@ def test_a_gravity_swap_leaves_the_velocity_alone():
     step = 500.0 / 240.0
     assert w.vx == pytest.approx(before[0] + gx * step, abs=1e-6)
     assert w.vy == pytest.approx(before[1] + gy * step, abs=1e-6)
+
+
+def test_world_defaults_to_the_rigid_rope():
+    """The 2026-08-20 playtest picked the rigid rope over the spring, and
+    that verdict is now the shipped default: a `World` built with no
+    `rigid_rope` argument at all must come out rigid. `make_world`/
+    `lab_world` above deliberately override this back to the spring for the
+    slice 1 regressions — this test is the one place in the suite that
+    exercises World's own bare default, unshadowed by that harness."""
+    w = World(
+        chain=chain_with([]),
+        params=PARAMS,
+        gravity_state=GravityState(flip_duration=0.3),
+        gravity=500.0,
+        player_radius=7.0,
+        speed_max=600.0,
+    )
+    assert w.rigid_rope is True

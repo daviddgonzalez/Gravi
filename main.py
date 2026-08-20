@@ -125,10 +125,11 @@ async def main() -> None:
     # rotating camera is what makes players sick, so the setting someone who
     # is getting sick needs is the one they are already in. C swaps them.
     rotating_camera = False
-    # Playtest experiments (2026-08-20 design doc). Loop state rather than
-    # world state, so they survive R and a rebuild of the chain.
+    # Playtest experiments (2026-08-20 design doc), played the same day: the
+    # rigid rope won and ALONG stayed the winning gravity mode. Loop state
+    # rather than world state, so they survive R and a rebuild of the chain.
     gravity_mode = GravityMode.ALONG
-    rigid_rope = False
+    rigid_rope = True
 
     accumulator = 0.0
     dead_timer = 0.0
