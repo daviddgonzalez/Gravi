@@ -96,3 +96,69 @@ def test_flipping_by_nothing_is_a_no_op():
     before = (g.angle, g.target_turns, g.settled)
     g.flip_by(0)
     assert (g.angle, g.target_turns, g.settled) == before
+
+
+from gravi.gravity import GravityMode, apply_gravity
+
+
+def test_along_is_the_old_behaviour():
+    v = apply_gravity(GravityMode.ALONG, (0.0, 1.0), 30.0, 0.0, 500.0, 1.0 / 240.0)
+    assert v == pytest.approx((30.0, 500.0 / 240.0))
+
+
+def test_perp_corridor_pushes_across_the_gravity_axis():
+    """perp(g) with the same handedness as chamber.perp: (-gy, gx)."""
+    v = apply_gravity(GravityMode.PERP_CORRIDOR, (0.0, 1.0), 0.0, 0.0,
+                      500.0, 1.0 / 240.0)
+    assert v == pytest.approx((-500.0 / 240.0, 0.0))
+
+
+def test_perp_corridor_adds_nothing_along_gravity():
+    gx, gy = 0.0, 1.0
+    vx, vy = 120.0, 40.0
+    for _ in range(500):
+        vx, vy = apply_gravity(GravityMode.PERP_CORRIDOR, (gx, gy), vx, vy,
+                               500.0, 1.0 / 240.0)
+    assert vx * gx + vy * gy == pytest.approx(40.0)
+
+
+def test_perp_velocity_never_changes_speed():
+    """The whole point of the mode. Adding a perpendicular acceleration each
+    step instead of rotating walks the velocity off its circle and the speed
+    creeps up — invisibly, and in exactly the direction of the complaint this
+    mode exists to answer."""
+    vx, vy = 300.0, -120.0
+    start = math.hypot(vx, vy)
+    for _ in range(10_000):
+        vx, vy = apply_gravity(GravityMode.PERP_VELOCITY, (0.0, 1.0), vx, vy,
+                               500.0, 1.0 / 240.0)
+    assert math.hypot(vx, vy) == pytest.approx(start, rel=1e-9)
+
+
+def test_perp_velocity_turns_the_heading():
+    vx, vy = 400.0, 0.0
+    before = math.atan2(vy, vx)
+    for _ in range(240):                      # one second
+        vx, vy = apply_gravity(GravityMode.PERP_VELOCITY, (0.0, 1.0), vx, vy,
+                               500.0, 1.0 / 240.0)
+    turned = math.atan2(vy, vx) - before
+    # omega = magnitude / speed, and speed is preserved, so one second of it.
+    assert turned == pytest.approx(500.0 / 400.0, rel=1e-3)
+
+
+def test_perp_velocity_falls_back_when_stationary():
+    """Perpendicular to nothing is undefined, and a player who stopped would
+    have nothing left to start them moving: the mode would be a soft-lock."""
+    v = apply_gravity(GravityMode.PERP_VELOCITY, (0.0, 1.0), 0.0, 0.0,
+                      500.0, 1.0 / 240.0)
+    assert v == pytest.approx((0.0, 500.0 / 240.0))
+
+
+def test_modes_cycle_with_wraparound():
+    mode = GravityMode.ALONG
+    seen = []
+    for _ in range(4):
+        seen.append(mode)
+        mode = mode.next()
+    assert seen == [GravityMode.ALONG, GravityMode.PERP_CORRIDOR,
+                    GravityMode.PERP_VELOCITY, GravityMode.ALONG]

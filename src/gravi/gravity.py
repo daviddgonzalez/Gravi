@@ -21,6 +21,7 @@ Never import pygame here (see tests/test_purity.py).
 from __future__ import annotations
 
 import math
+from enum import Enum
 
 QUARTER = math.pi / 2
 
@@ -35,6 +36,62 @@ def ease_in_out(t: float) -> float:
     if t >= 1.0:
         return 1.0
     return 0.5 - 0.5 * math.cos(math.pi * t)
+
+
+class GravityMode(str, Enum):
+    """What the gravity vector DOES to the player. Not what it is — the eased
+    quarter-turn in `GravityState` is untouched by all of these, so the camera,
+    the flip cadence and the camera lead keep working unchanged.
+
+    Experiments for the slice 2 playtest (see the 2026-08-20 design doc).
+    ALONG is the shipped behaviour and the default everywhere.
+    """
+
+    ALONG = "along"
+    PERP_CORRIDOR = "perp-corridor"
+    PERP_VELOCITY = "perp-velocity"
+
+    def next(self) -> "GravityMode":
+        order = list(GravityMode)
+        return order[(order.index(self) + 1) % len(order)]
+
+
+# Below this speed, "perpendicular to travel" has no meaning.
+PERP_VELOCITY_EPSILON = 1e-6
+
+
+def apply_gravity(mode: GravityMode, direction: Vec, vx: float, vy: float,
+                  magnitude: float, dt: float) -> Vec:
+    """The velocity after one step of gravity.
+
+    Returns a VELOCITY rather than an acceleration on purpose: two of these
+    modes are a force and the third is a rotation, and only by handing back the
+    finished velocity can one function cover both without the caller knowing
+    which it got.
+    """
+    gx, gy = direction
+    if mode is GravityMode.ALONG:
+        return (vx + gx * magnitude * dt, vy + gy * magnitude * dt)
+
+    if mode is GravityMode.PERP_CORRIDOR:
+        # Same handedness as chamber.perp — one convention for "a quarter turn"
+        # in this codebase, not two that differ by a sign.
+        px, py = -gy, gx
+        return (vx + px * magnitude * dt, vy + py * magnitude * dt)
+
+    speed = math.hypot(vx, vy)
+    if speed < PERP_VELOCITY_EPSILON:
+        # Perpendicular to nothing is undefined, and a stopped player would
+        # have nothing left to get them moving again.
+        return (vx + gx * magnitude * dt, vy + gy * magnitude * dt)
+
+    # A ROTATION, not an added force. A perpendicular force does no work in
+    # continuous mathematics, but explicit Euler at 240 Hz walks the velocity
+    # off the circle it is meant to stay on and the speed creeps upward. A
+    # rotation is speed-preserving by construction at any step size.
+    theta = (magnitude / speed) * dt
+    c, s = math.cos(theta), math.sin(theta)
+    return (vx * c - vy * s, vx * s + vy * c)
 
 
 class GravityState:
