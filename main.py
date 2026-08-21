@@ -26,7 +26,7 @@ import pygame  # noqa: E402
 from gravi import config  # noqa: E402
 from gravi.chamber import ChamberChain, ChamberParams  # noqa: E402
 from gravi.field import Charge, FieldParams, charge_force  # noqa: E402
-from gravi.gravity import GravityMode, GravityState  # noqa: E402
+from gravi.gravity import GravityState  # noqa: E402
 from gravi.editor import RoomEditor  # noqa: E402
 from gravi.render import hud, neon  # noqa: E402
 from gravi.render.camera import Camera, chambers_in_view  # noqa: E402
@@ -125,10 +125,9 @@ async def main() -> None:
     # rotating camera is what makes players sick, so the setting someone who
     # is getting sick needs is the one they are already in. C swaps them.
     rotating_camera = False
-    # Playtest experiments (2026-08-20 design doc), played the same day: the
-    # rigid rope won and ALONG stayed the winning gravity mode. Loop state
-    # rather than world state, so they survive R and a rebuild of the chain.
-    gravity_mode = GravityMode.ALONG
+    # Playtest experiment (2026-08-20 design doc), played the same day: the
+    # rigid rope won. Loop state rather than world state, so it survives R
+    # and a rebuild of the chain.
     rigid_rope = True
 
     accumulator = 0.0
@@ -160,10 +159,6 @@ async def main() -> None:
                     rotating_camera = not rotating_camera
                     status = ("camera: rotating" if rotating_camera
                               else "camera: fixed")
-                    status_timer = STATUS_DURATION
-                elif event.key == pygame.K_g:
-                    gravity_mode = gravity_mode.next()
-                    status = f"gravity: {gravity_mode.value}"
                     status_timer = STATUS_DURATION
                 elif event.key == pygame.K_t:
                     rigid_rope = not rigid_rope
@@ -268,7 +263,6 @@ async def main() -> None:
             world = build_world(seed, tunables)
             trail.clear()
             dead_timer = 0.0
-        world.gravity_mode = gravity_mode
         world.rigid_rope = rigid_rope
 
         accumulator += frame_dt
@@ -359,7 +353,6 @@ async def main() -> None:
             run_line = (f"chambers {world.cleared}   best {max(best, world.cleared)}"
                         f"   distance {int(world.distance)}"
                         f"   camera {'rotating' if rotating_camera else 'fixed'}"
-                        f"   gravity {gravity_mode.value}"
                         + ('   rope rigid' if rigid_rope else ''))
             hud.draw(screen, tuning, status, fps=clock.get_fps(), steps=steps,
                      run=run_line)

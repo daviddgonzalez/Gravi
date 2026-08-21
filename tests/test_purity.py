@@ -36,7 +36,7 @@ def imported_modules(path):
 def test_gravity_module_is_pure():
     imports = imported_modules(SRC / "gravity.py")
     assert "pygame" not in imports
-    assert imports <= {"__future__", "math", "dataclasses", "enum"}, imports
+    assert imports <= {"__future__", "math", "dataclasses"}, imports
 
 
 def test_chamber_module_is_pure():

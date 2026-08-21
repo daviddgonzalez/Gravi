@@ -29,7 +29,7 @@ import math
 from .chamber import ChamberChain
 from .config import PHYS_DT
 from .field import Charge, FieldParams, Node, charge_force
-from .gravity import QUARTER, GravityMode, GravityState, apply_gravity, gravity_force
+from .gravity import QUARTER, GravityState
 
 # _rotate_on_rope's radius appears in two denominators: the unit radial
 # direction (dx / r, dy / r) and the angular rate (speed / r). That makes a
@@ -56,7 +56,6 @@ class World:
         player_radius: float,
         speed_max: float,
         fall_speed_max: float = math.inf,
-        gravity_mode: GravityMode = GravityMode.ALONG,
         rigid_rope: bool = True,
         dt: float = PHYS_DT,
     ) -> None:
@@ -67,13 +66,11 @@ class World:
         self.player_radius = player_radius
         self.speed_max = speed_max
         self.fall_speed_max = fall_speed_max
-        # Playtest experiments (2026-08-20 design doc), played the same day.
-        # ALONG stayed the winning gravity mode, so gravity_mode still defaults
-        # to it unchanged. The rope did not: the rigid rope won and is now the
-        # shipped behaviour, so a World built without an explicit rigid_rope
-        # argument comes out rigid. The spring is the option now, reachable
-        # behind `T` (main.py) or by passing rigid_rope=False here.
-        self.gravity_mode = gravity_mode
+        # Playtest experiment (2026-08-20 design doc), played the same day:
+        # the rigid rope won and is now the shipped behaviour, so a World
+        # built without an explicit rigid_rope argument comes out rigid. The
+        # spring is the option now, reachable behind `T` (main.py) or by
+        # passing rigid_rope=False here.
         self.rigid_rope = rigid_rope
         self.dt = dt
 
@@ -198,38 +195,25 @@ class World:
                  and charge is Charge.ATTRACT)
         self._update_rope(node, rigid)
 
-        # Mass is fixed at 1.0, so force == acceleration. The node force is
-        # integrated first and gravity second, because PERP_VELOCITY rotates
-        # the finished velocity and has to see the one the node force produced.
+        # Mass is fixed at 1.0, so force == acceleration.
+        ax = gx * self.gravity
+        ay = gy * self.gravity
         if node is not None and not rigid:
             # Only attract is allowed to act past the rim; a latched repel is
             # inside its ring by construction, so the cutoff is a no-op there
             # and left in place as a guard rather than an exception.
             fx, fy = charge_force(self.x, self.y, node, charge, self.params,
                                   ignore_radius=charge is Charge.ATTRACT)
-            self.vx += fx * self.dt
-            self.vy += fy * self.dt
+            ax += fx
+            ay += fy
         # A rigid rope supplies exactly the tension its constraint needs, so
         # the spring is NOT applied on top: two mechanisms pulling on one
-        # radius would just fight.
+        # radius would just fight. Gravity is still applied as a force
+        # increment here even while rigid — _rotate_on_rope strips whatever
+        # component of the resulting velocity turns out to be radial.
 
-        if rigid:
-            # A rigid rope is a constraint, not a spring: apply_gravity's
-            # PERP_VELOCITY branch is a rotation of the WHOLE velocity vector
-            # about the origin, and that rotation injects a component that is
-            # radial relative to the node. _rotate_on_rope strips exactly that
-            # component every step, and two individually speed-preserving
-            # operations composed leak energy — measured 260 -> 10 px/s over
-            # 70 seconds before this fix. gravity_force instead returns an
-            # ACCELERATION, so the rope's own strip is the only thing that
-            # gets to decide what survives.
-            fx, fy = gravity_force(self.gravity_mode, (gx, gy),
-                                   self.vx, self.vy, self.gravity)
-            self.vx += fx * self.dt
-            self.vy += fy * self.dt
-        else:
-            self.vx, self.vy = apply_gravity(self.gravity_mode, (gx, gy),
-                                             self.vx, self.vy, self.gravity, self.dt)
+        self.vx += ax * self.dt
+        self.vy += ay * self.dt
 
         self._clamp_speed(gx, gy)
 
@@ -251,66 +235,24 @@ class World:
             self._check_cores()
 
     def _clamp_speed(self, gx: float, gy: float) -> None:
-        """Bound speed on the axis the ACTIVE MODE's gravity actually pushes
-        along, never as one isotropic |v| clamp and never assuming that axis
-        is the fixed gravity vector — both are the two ways this went wrong
-        in the 2026-08-20 review (findings 1 and 2 on the gravity modes doc).
-
-        Fall and carry are always bounded separately for the reason `config`
-        gives above `speed_max`/`fall_speed_max`: an isotropic clamp rescales
-        the whole vector, so the velocity gravity keeps adding gets paid for
-        out of the player's carry — every swing bleeds it while total speed
-        sits pinned at the cap. But which axis is "fall" depends on which
-        axis the current mode's gravity actually feeds:
-
-        - ALONG feeds the gravity axis itself. Untouched from slice 1 — this
-          is the shipped game, and its arithmetic below is byte-identical to
-          before this method existed.
-        - PERP_CORRIDOR's force is perp(gravity) (see `gravity_force`), so
-          THAT is the axis fall_speed_max must bound, and the gravity axis —
-          the one the force never touches — is carry, bounded by speed_max.
-          Getting this backwards is finding 2: it silently swapped which cap
-          governs the corridor versus the lane.
-        - PERP_VELOCITY's gravity does no work at all — it is a rotation of
-          the whole vector, not a force along any fixed axis — so there is no
-          axis it feeds and nothing for a fall/carry split to protect. The
-          isotropic clamp this falls back to is NOT the pathology the split
-          exists to avoid: that pathology is gravity continuously adding
-          speed along one axis while an isotropic cap makes every other axis
-          pay for it. Here gravity adds zero speed on any axis, so there is
-          nothing to pay for. This was finding 1: the old code kept
-          measuring "fall" along the fixed gravity-state axis regardless of
-          mode, and since PERP_VELOCITY's velocity rotates freely through
-          that axis, it got truncated on every crossing — defeating the
-          mode's whole promise that gravity cannot change speed.
+        """Bound fall and carry speed separately, never as one isotropic |v|
+        clamp: an isotropic clamp rescales the whole vector, so the velocity
+        gravity keeps adding gets paid for out of the player's carry — every
+        swing bleeds it while total speed sits pinned at the cap. Fall is
+        measured along the current gravity direction and carry perpendicular
+        to it, so the split rotates with gravity instead of assuming a fixed
+        world axis. Speed against gravity is left uncapped so a slingshot can
+        still fling.
         """
-        if self.gravity_mode is GravityMode.PERP_VELOCITY:
-            speed = math.hypot(self.vx, self.vy)
-            if speed > self.speed_max:
-                scale = self.speed_max / speed
-                self.vx *= scale
-                self.vy *= scale
-            return
-
-        if self.gravity_mode is GravityMode.PERP_CORRIDOR:
-            # perp(gravity), same handedness as gravity_force's own
-            # PERP_CORRIDOR push: the axis this mode's force feeds.
-            fx, fy = -gy, gx
-            carry_x, carry_y = gx, gy
-        else:
-            # ALONG. fall is along gravity, carry is perpendicular to it —
-            # exactly slice 1's split.
-            fx, fy = gx, gy
-            carry_x, carry_y = gy, -gx
-
-        fall = self.vx * fx + self.vy * fy
-        carry = self.vx * carry_x + self.vy * carry_y
+        px, py = gy, -gx
+        fall = self.vx * gx + self.vy * gy
+        carry = self.vx * px + self.vy * py
         if fall > self.fall_speed_max:
             fall = self.fall_speed_max
         if abs(carry) > self.speed_max:
             carry = math.copysign(self.speed_max, carry)
-        self.vx = fall * fx + carry * carry_x
-        self.vy = fall * fy + carry * carry_y
+        self.vx = fall * gx + carry * px
+        self.vy = fall * gy + carry * py
 
     def _update_rope(self, node: Node | None, rigid: bool) -> None:
         """Record the radius at the moment of the grab, and forget it the
@@ -341,16 +283,13 @@ class World:
         radial velocity" wording: doing that with the current position (i.e.
         stripping the velocity's component along the radial direction found
         *after* the straight-line step) shrinks the tangential speed by
-        cos(theta) every step, the same drift `apply_gravity`'s docstring
-        already diagnoses for PERP_VELOCITY. At the corridor's own scale
-        (theta ~0.01 rad/step) that decayed a held swing's speed by ~12% over
-        the ten seconds `test_a_rigid_rope_is_uniform_circular_motion`
-        specifies to hold to 1e-6 — confirmed by running the literal
-        algorithm before switching to this one. Rotating position and
-        velocity together by the same angle is speed- and radius-preserving
-        by construction, at any step size, which is exactly why
-        PERP_VELOCITY is implemented as a rotation rather than a perpendicular
-        force. The radial component removed here is the one true to the
+        cos(theta) every step. At the corridor's own scale (theta ~0.01
+        rad/step) that decayed a held swing's speed by ~12% over the ten
+        seconds `test_a_rigid_rope_is_uniform_circular_motion` specifies to
+        hold to 1e-6 — confirmed by running the literal algorithm before
+        switching to this one. Rotating position and velocity together by the
+        same angle is speed- and radius-preserving by construction, at any
+        step size. The radial component removed here is the one true to the
         design intent: it still zeroes out on the first grabbed step (see
         `test_a_rigid_rope_strips_the_radial_velocity`) and does no work.
         """

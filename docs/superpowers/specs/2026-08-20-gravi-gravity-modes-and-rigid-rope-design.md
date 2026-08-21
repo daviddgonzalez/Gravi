@@ -3,6 +3,15 @@
 **Status:** approved 2026-08-20. Experiments for the slice 2 playtest, not
 shipped behaviour.
 
+**Resolved 2026-08-20.** This document now describes a settled, closed
+experiment, not live behaviour. The author played all three gravity modes
+the same day and kept `ALONG`; `PERP_CORRIDOR`, `PERP_VELOCITY`, and their
+supporting machinery (`GravityMode`, `apply_gravity`, `gravity_force`,
+`MAX_TURN_PER_STEP`, the `G` key) were removed from the code that same day.
+The rigid rope from this same experiment won its own comparison and was kept
+as the default — see the final amendment at the bottom of this document for
+the full verdict.
+
 **Origin.** The author, mid-playtest: *"acceleration feels uncontrollable when
 the acceleration should be from players swinging."* Today gravity pulls along
 the corridor, so speed arrives whether or not you earned it, and a swing is
@@ -278,3 +287,33 @@ Consequences:
   against whatever the World default happens to be — because the rule they
   encode is the spring's rule, and the spring is still a real, playable
   mode.
+
+## Final amendment: the playtest verdict, and the deletion (2026-08-20)
+
+The author played all three gravity modes the same day this document was
+approved. The verdict was split, and both halves are now settled:
+
+- **Gravity modes.** `ALONG` — the original, shipped behaviour — won.
+  `PERP_CORRIDOR` and `PERP_VELOCITY` lost. Because this was a deletion
+  decision and not a "leave it behind a key" decision, `GravityMode`,
+  `apply_gravity`, `gravity_force`, and `MAX_TURN_PER_STEP` were removed
+  from `src/gravi/gravity.py` outright, along with the `gravity_mode`
+  parameter on `World`, the `G` keybinding and its HUD line in `main.py`,
+  and every test in `tests/test_gravity.py` and `tests/test_sim.py` that
+  exercised the two losing modes or the dispatch machinery between them.
+  `src/gravi/sim.py`'s `step()` was restored to its pre-experiment shape: a
+  single `ax, ay` acceleration summing gravity and the node force, applied
+  once — recovering the bit-for-bit reproducibility against pre-experiment
+  runs that §1 above documents losing. Gravity is once again just the eased
+  quarter-turn described by `GravityState` in `gravity.py`; nothing in that
+  module does anything else.
+- **The rigid rope.** It won its own comparison against the spring and was
+  kept as `World`'s default, exactly as the "Consequences" section above
+  describes. Nothing about the rope changed on top of what is already
+  written there.
+
+This document remains as the record of an experiment that was run and
+settled, not as a description of anything currently live in the code. Where
+the two halves of this document now disagree with the shipped code — the
+gravity-mode sections describe machinery that no longer exists — this
+amendment is the authority on what actually happened.

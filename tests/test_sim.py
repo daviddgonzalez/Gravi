@@ -6,7 +6,6 @@ import pytest
 from gravi.chamber import ChamberChain, ChamberParams
 from gravi.field import Charge, FieldParams, Node
 from gravi.gravity import GravityState
-from gravi.gravity import GravityMode
 from gravi.sim import World, charge_from_input
 
 PARAMS = FieldParams(k_attract=8.0, k_repel=12.0, force_max=1e9)
@@ -718,52 +717,9 @@ def test_a_rigid_rope_does_not_apply_to_a_repel():
     assert math.hypot(w.x - node.x, w.y - node.y) > start + 10.0
 
 
-def test_perp_velocity_mode_does_not_feed_the_player_speed():
-    w = lab_world(gravity=500.0, nodes=[], spawn=(400.0, 400.0))
-    w.gravity_mode = GravityMode.PERP_VELOCITY
-    w.vx, w.vy = 300.0, 0.0
-    start = math.hypot(w.vx, w.vy)
-
-    for _ in range(1200):
-        w.step(Charge.NEUTRAL)
-        if w.dead:
-            break
-
-    assert math.hypot(w.vx, w.vy) == pytest.approx(start, rel=1e-6)
-
-
-def test_a_rigid_rope_under_perp_velocity_does_not_leak_speed():
-    """Finding 2, the regression test for the leak. Measured before the fix:
-    on a radius-100 rope at speed 260 with gravity=500 and PERP_VELOCITY,
-    speed decayed 260 -> 239 (10s) -> 190 (30s) -> 71 (60s) -> 10 (70s) while
-    the radius stayed pinned at exactly 100. Cause: apply_gravity's
-    PERP_VELOCITY branch rotated the whole velocity vector about the ORIGIN,
-    injecting a component that was radial relative to the node, which
-    _rotate_on_rope then stripped every step -- two individually
-    speed-preserving operations leaking energy together. The fix routes
-    gravity through gravity_force (a force increment) instead of
-    apply_gravity (a rotation) whenever a rigid rope is held. For a player on
-    a rope moving tangentially, PERP_VELOCITY's force is purely radial to the
-    node, so the rope absorbs all of it: gravity does nothing while attached,
-    and speed and radius both hold for the full 60 simulated seconds."""
-    node = Node(400.0, 400.0, 400.0, 5.0)
-    w = lab_world(gravity=500.0, nodes=[node], spawn=(300.0, 400.0))
-    w.gravity_mode = GravityMode.PERP_VELOCITY
-    w.rigid_rope = True
-    w.vx, w.vy = 0.0, 260.0
-
-    for _ in range(14_400):                     # sixty seconds at 240 Hz
-        w.step(Charge.ATTRACT)
-        assert not w.dead
-
-    assert math.hypot(w.vx, w.vy) == pytest.approx(260.0, rel=1e-6)
-    assert math.hypot(w.x - node.x, w.y - node.y) == pytest.approx(100.0, rel=1e-6)
-
-
 def test_a_rigid_rope_under_along_still_swings_the_pendulum():
-    """Finding 2's fix must not overcorrect: ALONG and PERP_CORRIDOR were
-    already forces, not rotations, so nothing about them should change --
-    gravity must still visibly swing a pendulum held on a rigid rope.
+    """Gravity is a force, so it must still visibly swing a pendulum held on
+    a rigid rope.
 
     Player starts at rest level with the node (300, 400) vs node (400, 400),
     so the released height above the bottom of the swing equals the radius,
@@ -771,8 +727,8 @@ def test_a_rigid_rope_under_along_still_swings_the_pendulum():
     speed, reached at the bottom of the swing, at sqrt(2 * g * r):
         sqrt(2 * 500 * 100) ~= 316.2 px/s
     A speed that never moved off ~0 would mean gravity was being silently
-    swallowed by the rope the way PERP_VELOCITY's was; asserting a wide swing
-    range makes this non-vacuous."""
+    swallowed by the rope; asserting a wide swing range makes this
+    non-vacuous."""
     node = Node(400.0, 400.0, 400.0, 5.0)
     w = lab_world(gravity=500.0, nodes=[node], spawn=(300.0, 400.0))
     w.rigid_rope = True
@@ -787,70 +743,6 @@ def test_a_rigid_rope_under_along_still_swings_the_pendulum():
 
     assert max(speeds) - min(speeds) > 200.0, (min(speeds), max(speeds))
     assert max(speeds) == pytest.approx(316.2, rel=0.05)
-
-
-def test_perp_velocity_clamp_does_not_defeat_the_mode():
-    """Finding 1 (CRITICAL, 2026-08-20 review). PERP_VELOCITY promises gravity
-    cannot change the player's speed, but the clamp used to always measure
-    "fall" along the fixed gravity-state axis regardless of mode. In this mode
-    the velocity rotates freely and sweeps through that axis, so the old
-    clamp truncated it every time it crossed. fall_speed_max is set small
-    (the shipped default) so the old bug actually bites; speed_max is left at
-    lab_world's huge default so the fixed clamp cannot also mask the result --
-    a player at 1500 px/s must stay near 1500, not settle at some smaller
-    value dictated by either cap."""
-    w = lab_world(gravity=500.0, nodes=[], spawn=(400.0, 400.0),
-                  fall_speed_max=600.0)
-    w.gravity_mode = GravityMode.PERP_VELOCITY
-    w.vx, w.vy = 1500.0, 0.0
-
-    for _ in range(600):
-        w.step(Charge.NEUTRAL)
-        assert not w.dead
-
-    assert math.hypot(w.vx, w.vy) == pytest.approx(1500.0, rel=1e-3)
-
-
-def test_perp_corridor_clamp_bounds_the_axis_gravity_actually_feeds():
-    """Finding 2 (IMPORTANT). Section 2.2 says fall_speed_max bounds the
-    lateral drift PERP_CORRIDOR's force feeds and speed_max bounds progress
-    down the corridor -- but the old clamp always treated "fall" as the
-    component along the fixed gravity vector, which in this mode is the axis
-    the force does NOT push on. With speed_max=300 and fall_speed_max=900,
-    the across-lane component gravity feeds must settle near 900, not 300."""
-    w = lab_world(gravity=2000.0, nodes=[], spawn=(400.0, 400.0),
-                  speed_max=300.0, fall_speed_max=900.0)
-    w.gravity_mode = GravityMode.PERP_CORRIDOR
-    gx, gy = w.gravity_state.direction()
-    fx, fy = -gy, gx        # perp(gravity): the axis this mode's force pushes
-
-    for _ in range(600):
-        w.step(Charge.NEUTRAL)
-        assert not w.dead
-
-    across = w.vx * fx + w.vy * fy
-    assert across == pytest.approx(900.0, rel=1e-3)
-
-
-def test_perp_corridor_runs_as_a_world_and_pushes_across_the_lane():
-    """PERP_CORRIDOR was previously exercised only as a pure function in
-    test_gravity.py -- no test ever assigned it to a World. Run it through a
-    real simulation loop and confirm it drifts the player across the lane
-    rather than down the corridor."""
-    w = lab_world(gravity=800.0, nodes=[], spawn=(400.0, 400.0))
-    w.gravity_mode = GravityMode.PERP_CORRIDOR
-    start_x, start_y = w.x, w.y
-
-    for _ in range(300):
-        w.step(Charge.NEUTRAL)
-        assert not w.dead
-
-    gx, gy = w.gravity_state.direction()
-    fx, fy = -gy, gx        # perp(gravity): across the lane
-    across_lane = (w.x - start_x) * fx + (w.y - start_y) * fy
-    down_corridor = (w.x - start_x) * gx + (w.y - start_y) * gy
-    assert abs(across_lane) > 50.0
-    assert abs(across_lane) > abs(down_corridor)
 
 
 def test_a_gravity_swap_leaves_the_velocity_alone():
