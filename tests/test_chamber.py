@@ -226,3 +226,59 @@ def test_a_straight_chamber_carries_its_direction_through():
     for ch in chain.chambers:
         if ch.turn == 0:
             assert ch.next_direction == pytest.approx(ch.direction, abs=1e-12)
+
+
+# --- nearest wall ---------------------------------------------------------
+# Walls become repel-able surfaces so a corridor always offers something to
+# push off, even when no node is in reach and gravity just flipped.
+
+
+def test_the_centre_lane_is_half_a_width_from_either_wall():
+    params = ChamberParams(depth=1600.0, half_width=460.0)
+    ch = make_chamber(0, (0.0, 0.0), (0.0, 1.0), params, seed=1)
+    distance, _normal = ch.nearest_wall(*ch.world(800.0, 0.0))
+    assert distance == pytest.approx(460.0)
+
+
+def test_the_normal_points_away_from_the_nearer_wall():
+    params = ChamberParams(depth=1600.0, half_width=460.0)
+    ch = make_chamber(0, (0.0, 0.0), (0.0, 1.0), params, seed=1)
+    px, py = ch.perp
+
+    distance, normal = ch.nearest_wall(*ch.world(800.0, 460.0))
+    assert distance == pytest.approx(0.0)
+    assert normal == pytest.approx((-px, -py))
+
+    distance, normal = ch.nearest_wall(*ch.world(800.0, -460.0))
+    assert distance == pytest.approx(0.0)
+    assert normal == pytest.approx((px, py))
+
+
+def test_a_player_past_the_wall_gets_zero_not_a_negative_distance():
+    """Negative distance would invert the push into a pull. They die on the
+    next bounds check either way, but not by being sucked through a wall."""
+    params = ChamberParams(depth=1600.0, half_width=460.0)
+    ch = make_chamber(0, (0.0, 0.0), (0.0, 1.0), params, seed=1)
+    distance, _normal = ch.nearest_wall(*ch.world(800.0, 900.0))
+    assert distance == 0.0
+
+
+def test_the_tie_at_dead_centre_breaks_deterministically():
+    """A player at u == 0 is equidistant from both walls. The validator has to
+    reproduce whichever side wins, so it must not depend on float noise."""
+    params = ChamberParams(depth=1600.0, half_width=460.0)
+    ch = make_chamber(0, (0.0, 0.0), (0.0, 1.0), params, seed=1)
+    first = ch.nearest_wall(*ch.world(800.0, 0.0))
+    for _ in range(5):
+        assert ch.nearest_wall(*ch.world(800.0, 0.0)) == first
+
+
+def test_the_normal_is_perpendicular_to_a_turned_corridor():
+    """The corridor runs in world +x here, so its walls are horizontal and the
+    normal must be vertical — the method works in chamber-local space, not in
+    world axes."""
+    params = ChamberParams(depth=1600.0, half_width=460.0)
+    ch = make_chamber(0, (0.0, 0.0), (1.0, 0.0), params, seed=1)
+    _distance, normal = ch.nearest_wall(*ch.world(800.0, 300.0))
+    assert normal[0] == pytest.approx(0.0)
+    assert abs(normal[1]) == pytest.approx(1.0)

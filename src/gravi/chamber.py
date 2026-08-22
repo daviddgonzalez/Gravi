@@ -113,6 +113,26 @@ class Chamber:
         px, py = self.perp
         return (dx * self.direction[0] + dy * self.direction[1], dx * px + dy * py)
 
+    def nearest_wall(self, x: float, y: float) -> tuple[float, Vec]:
+        """Distance to the nearer side wall, and the unit normal pointing away
+        from it, across the corridor.
+
+        The NEARER wall only, never both. At the centre lane two walls push
+        equally and cancel, which would delete the force in exactly the middle
+        of the corridor — the place a player who just crossed a turn is
+        standing (2026-08-22 design doc 3). A player at u == 0 is equidistant,
+        so the tie breaks to the +u wall deterministically, because the offline
+        validator has to reproduce it.
+
+        Distance is clamped at zero for a player already past the wall. A
+        negative distance would invert the push into a pull and suck them
+        through it; they die on the next bounds check either way.
+        """
+        _t, u = self.local(x, y)
+        px, py = self.perp
+        normal = (-px, -py) if u >= 0.0 else (px, py)
+        return (max(0.0, self.params.half_width - abs(u)), normal)
+
     def arrow_endpoints(self) -> tuple[Vec, Vec]:
         w = self.params.half_width
         return (self.world(self.params.depth, w), self.world(self.params.depth, -w))
