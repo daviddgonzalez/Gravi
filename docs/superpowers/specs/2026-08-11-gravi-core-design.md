@@ -94,6 +94,30 @@ This single property does the work that a stamina meter, a cooldown, and a tutor
 
 Charged **surfaces** obey the same law. Repel off a wall to launch without touching it; attract to a wall to slam flat against it and kill a bad arc.
 
+> **Amendment — 2026-08-22. Repel has a cost; attract does not.**
+>
+> This section stands unchanged for **attract**: the solid core is still the
+> entire balance system for the pull, still geometric, still no meter. Approach
+> angle still decides whether a node is a slingshot or a wall, and that is still
+> the deep skill.
+>
+> **Repel** gains a rechargeable charge cost, because the argument above does
+> not reach it. Solid cores make holding attract fatal, which is what makes the
+> pull self-limiting. Nothing makes holding repel fatal — it pushes you *away*
+> from the thing that would punish you — so the pull's geometric limiter has no
+> equivalent on the push, and repel was unlimited by omission rather than by
+> design. An unlimited emergency out is a button you simply hold whenever you
+> are unsure.
+>
+> The cost is drawn **in light on the player**, not in a UI panel, so §11's
+> "no meter or UI" holds as to UI and is amended as to meter.
+>
+> Repel's job here — "the emergency out when an approach was misjudged" — is
+> strengthened rather than weakened, because charged surfaces now make that out
+> available where no node exists, which is exactly where it used to be missing.
+>
+> See `docs/superpowers/specs/2026-08-22-gravi-charged-surfaces-and-repel-charges-design.md`.
+
 ### 2.4 Gravity
 
 Gravity stays, and it is the engine. The player is always falling, so nodes are always precious and any gap without them is a real threat. It also means a run can never stall, which satisfies the constant-flow requirement through physics rather than a forced-scroll camera.

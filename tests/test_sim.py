@@ -25,7 +25,10 @@ def chain_with(nodes, params=None):
 
 def make_world(nodes=(), flip_duration=0.3, gravity=500.0, spawn=None,
                chamber_params=None, player_radius=7.0, speed_max=600.0,
-               fall_speed_max=600.0, rigid_rope=False, wall_reach=260.0):
+               fall_speed_max=600.0, rigid_rope=False, wall_reach=260.0,
+               repel_charges_max=3.0, repel_charge_seconds=0.35,
+               repel_min_spend=0.5, repel_regen=0.4,
+               repel_attach_bonus=0.5):
     # rigid_rope defaults to False (the spring) here even though World itself
     # now defaults to True (the rigid rope, played and adopted 2026-08-20).
     # Every "slice 1 regressions" test below this point was written against
@@ -44,6 +47,11 @@ def make_world(nodes=(), flip_duration=0.3, gravity=500.0, spawn=None,
         fall_speed_max=fall_speed_max,
         rigid_rope=rigid_rope,
         wall_reach=wall_reach,
+        repel_charges_max=repel_charges_max,
+        repel_charge_seconds=repel_charge_seconds,
+        repel_min_spend=repel_min_spend,
+        repel_regen=repel_regen,
+        repel_attach_bonus=repel_attach_bonus,
     )
     if spawn is not None:
         w.x, w.y = spawn
@@ -876,3 +884,101 @@ def test_a_player_crossing_a_turn_can_save_themselves_on_a_wall():
     after = w.vx * px + w.vy * py
     assert abs(after) < abs(before), (
         f"repel must bleed off the lateral rush: {before} -> {after}")
+
+
+def test_a_press_in_open_space_is_free():
+    """The player is allowed to be wrong about whether anything was in reach."""
+    w = make_world(flip_duration=0.0, wall_reach=10.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 0.0)
+    before = w.repel_charges
+    for _ in range(60):
+        w.step(Charge.REPEL)
+    assert w.repel_charges == pytest.approx(before)
+
+
+def test_a_push_drains_the_tank():
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 380.0)
+    before = w.repel_charges
+    for _ in range(60):                          # a quarter second of pushing
+        w.step(Charge.REPEL)
+    assert w.repel_charges < before
+
+
+def test_a_tap_costs_at_least_the_floor():
+    """Without the floor, a micro-tap is free and tap-spam replaces hold-spam."""
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 380.0)
+    before = w.repel_charges
+
+    w.step(Charge.REPEL)                         # one frame: 1/240 s
+    w.step(Charge.NEUTRAL)                       # released
+
+    spent = before - w.repel_charges
+    assert spent == pytest.approx(0.5, abs=1e-9)
+
+
+def test_repel_does_not_fire_on_an_empty_tank():
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    px, py = ch.perp
+    w.x, w.y = ch.world(400.0, 380.0)
+    w.repel_charges = 0.0
+    w.vx = w.vy = 0.0
+
+    w.step(Charge.REPEL)
+
+    assert (w.vx * px + w.vy * py) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_the_tank_regenerates_and_caps():
+    """Gravity off and a wide chamber, so the player never dies: reset() refills
+    the tank, and a test that let them die would pass without regen existing."""
+    w = lab_world(gravity=0.0, nodes=[])
+    w.repel_charges = 0.0
+    for _ in range(240 * 30):                    # thirty seconds
+        w.step(Charge.NEUTRAL)
+        assert not w.dead
+    assert w.repel_charges == pytest.approx(w.repel_charges_max)
+
+
+def test_regen_pauses_while_pushing():
+    """Drain and regen must never fight over the same frame, or the cost of a
+    push is quietly refunded as it is paid."""
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 380.0)
+    w.repel_charges = 2.0
+
+    for _ in range(60):
+        w.step(Charge.REPEL)
+
+    # Floor plus a quarter second of drain, with nothing added back.
+    expected = 2.0 - max(0.5, (60 / 240) / w.repel_charge_seconds)
+    assert w.repel_charges == pytest.approx(expected, abs=1e-6)
+
+
+def test_a_new_attract_latch_pays_a_bonus_once():
+    node = Node(400.0, 400.0, 300.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.repel_charges = 0.0
+
+    w.step(Charge.ATTRACT)
+    after_first = w.repel_charges
+    assert after_first >= w.repel_attach_bonus
+
+    for _ in range(10):
+        w.step(Charge.ATTRACT)
+    # Regen still ticks while attracting, so allow for it — what must NOT
+    # happen is a second bonus, which would be another whole attach_bonus.
+    assert w.repel_charges < after_first + w.repel_attach_bonus
+
+
+def test_reset_refills_the_tank():
+    w = make_world(flip_duration=0.0)
+    w.repel_charges = 0.0
+    w.reset()
+    assert w.repel_charges == pytest.approx(w.repel_charges_max)

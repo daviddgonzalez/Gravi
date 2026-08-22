@@ -59,6 +59,11 @@ class World:
         rigid_rope: bool = True,
         dt: float = PHYS_DT,
         wall_reach: float = 260.0,
+        repel_charges_max: float = 3.0,
+        repel_charge_seconds: float = 0.35,
+        repel_min_spend: float = 0.5,
+        repel_regen: float = 0.4,
+        repel_attach_bonus: float = 0.5,
     ) -> None:
         self.chain = chain
         self.params = params
@@ -78,6 +83,21 @@ class World:
         # corridor always has one, which is what removes the no-verb moment
         # after a gravity turn.
         self.wall_reach = wall_reach
+
+        # Repel's budget (2026-08-22 design doc 4). Attract has no cost and
+        # must not gain one: solid cores already make holding attract fatal,
+        # which is what makes the pull self-limiting. Nothing makes holding
+        # repel fatal, because it pushes you away from the thing that would
+        # punish you, so the push was unlimited by omission rather than design.
+        self.repel_charges_max = repel_charges_max
+        self.repel_charge_seconds = repel_charge_seconds
+        self.repel_min_spend = repel_min_spend
+        self.repel_regen = repel_regen
+        self.repel_attach_bonus = repel_attach_bonus
+        self.repel_charges = repel_charges_max
+        self._press_paid: float | None = None   # None when no press is open
+        self._press_used = 0.0
+        self._bonus_latch: tuple[int, int] | None = None
 
         self.x = 0.0
         self.y = 0.0
@@ -107,6 +127,10 @@ class World:
         self._latch = None
         self._rope = None
         self._rope_radius = None
+        self.repel_charges = self.repel_charges_max
+        self._press_paid = None
+        self._press_used = 0.0
+        self._bonus_latch = None
         self.gravity_state.settle(
             round(math.atan2(ch.direction[0], ch.direction[1]) / QUARTER))
 
@@ -200,6 +224,17 @@ class World:
                  and charge is Charge.ATTRACT)
         self._update_rope(node, rigid)
 
+        if (charge is Charge.ATTRACT and node is not None
+                and self._latch != self._bonus_latch):
+            # Once per NEW latch, not per frame: grabbing is already how you
+            # steer, and now it is also how you rearm.
+            self._bonus_latch = self._latch
+            self.repel_charges = min(
+                self.repel_charges_max,
+                self.repel_charges + self.repel_attach_bonus)
+        elif node is None:
+            self._bonus_latch = None
+
         # Mass is fixed at 1.0, so force == acceleration.
         ax = gx * self.gravity
         ay = gy * self.gravity
@@ -209,8 +244,6 @@ class World:
             # and left in place as a guard rather than an exception.
             fx, fy = charge_force(self.x, self.y, node, charge, self.params,
                                   ignore_radius=charge is Charge.ATTRACT)
-            ax += fx
-            ay += fy
         elif node is None and charge is Charge.REPEL:
             # No node in reach, so the wall is what is left. It is a FALLBACK,
             # never an extra force stacked on node play: a node in range always
@@ -219,8 +252,33 @@ class World:
             distance, normal = self.chain.current.nearest_wall(self.x, self.y)
             fx, fy = surface_force(distance, normal, self.params,
                                    self.wall_reach)
-            ax += fx
-            ay += fy
+        else:
+            fx = fy = 0.0
+
+        pushing = False
+        if charge is Charge.REPEL and (fx != 0.0 or fy != 0.0):
+            # Only a push that would actually do something costs anything.
+            pushing = self._open_or_continue_press()
+            if not pushing:
+                fx = fy = 0.0
+        else:
+            # A press cost is "settled when the press ends" (design doc 4):
+            # the frame that closes it is still part of what the press paid
+            # for, not idle time, so it must not also earn a regen tick — that
+            # would refund a sliver of the floor it just finished paying. Only
+            # a frame that finds no press already open is truly idle.
+            settling = self._press_paid is not None
+            self._end_press()
+            pushing = settling
+
+        ax += fx
+        ay += fy
+
+        if not pushing:
+            # Regen and drain never fight over the same frame.
+            self.repel_charges = min(
+                self.repel_charges_max,
+                self.repel_charges + self.repel_regen * self.dt)
         # A rigid rope supplies exactly the tension its constraint needs, so
         # the spring is NOT applied on top: two mechanisms pulling on one
         # radius would just fight. Gravity is still applied as a force
@@ -335,6 +393,35 @@ class World:
         ny = node.y + dx * s + dy * c
         self.vx, self.vy = self.vx * c - self.vy * s, self.vx * s + self.vy * c
         return nx, ny
+
+    def _open_or_continue_press(self) -> bool:
+        """Pay for a repel that is about to produce force. False means it may
+        not fire.
+
+        The floor is deducted the instant the first force is produced, not on
+        release, so a press can never drain past what it reserved. A press that
+        produces NO force never reaches here and therefore costs nothing.
+        """
+        if self._press_paid is None:
+            if self.repel_charges < self.repel_min_spend:
+                return False
+            self.repel_charges -= self.repel_min_spend
+            self._press_paid = self.repel_min_spend
+            self._press_used = 0.0
+
+        self._press_used += self.dt / max(self.repel_charge_seconds, 1e-9)
+        overrun = self._press_used - self._press_paid
+        if overrun > 0.0:
+            spend = min(overrun, self.repel_charges)
+            self.repel_charges -= spend
+            self._press_paid += spend
+            if spend < overrun:
+                return False            # tank ran dry mid-push
+        return True
+
+    def _end_press(self) -> None:
+        self._press_paid = None
+        self._press_used = 0.0
 
     def _check_bounds(self) -> None:
         ch = self.chain.current
