@@ -60,3 +60,19 @@ def test_the_turn_cadence_is_tunable():
     assert low.default == 3.0
     assert high.default == 7.0
     assert low.lo >= 1.0
+
+
+def test_the_surface_and_charge_knobs_are_tunable():
+    """None of these is settled, and the playtest sweeps them live."""
+    assert config.TUNABLES["wall_reach"].default == 260.0
+    assert config.TUNABLES["repel_charges_max"].default == 3.0
+    assert config.TUNABLES["repel_charge_seconds"].default == 0.35
+    assert config.TUNABLES["repel_min_spend"].default == 0.5
+    assert config.TUNABLES["repel_regen"].default == 0.4
+    assert config.TUNABLES["repel_attach_bonus"].default == 0.5
+
+
+def test_a_press_floor_can_never_exceed_the_tank():
+    """A floor larger than the maximum would make repel permanently unusable:
+    every press would be unaffordable no matter how long the player waited."""
+    assert config.TUNABLES["repel_min_spend"].hi <= config.TUNABLES["repel_charges_max"].lo

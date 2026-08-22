@@ -121,6 +121,22 @@ TUNABLES: dict[str, TunableSpec] = {
     # either rebuilds the corridor from the same seed.
     "turn_gap_min":   TunableSpec(3.0,    1.0,    1.0,    12.0),
     "turn_gap_max":   TunableSpec(7.0,    1.0,    1.0,    20.0),
+    # Charged surfaces and the repel budget (2026-08-22 design doc). wall_reach
+    # is node scale on purpose: a player crossing a turn is moving across the
+    # corridor at the full speed cap with a wall 0.77 s away, so the reach does
+    # not have to span the corridor — pressing early and riding the ramp in is
+    # the skill. Measured across twelve seeds; see the doc's section 2.
+    "wall_reach":         TunableSpec(260.0, 20.0, 60.0, 900.0),
+    # One charge is repel_charge_seconds of push. A press that produces force
+    # costs at least repel_min_spend, or a micro-tap is free and the spam this
+    # exists to stop comes back wearing a different hat.
+    "repel_charges_max":     TunableSpec(3.0,  1.0,  1.0,   9.0),
+    "repel_charge_seconds":  TunableSpec(0.35, 0.05, 0.05,  2.0),
+    "repel_min_spend":       TunableSpec(0.5,  0.1,  0.0,   1.0),
+    # Passive regen is the safety valve, not a convenience: node recovery is
+    # unavailable in exactly the nodeless stretch this mechanic exists for.
+    "repel_regen":           TunableSpec(0.4,  0.05, 0.0,   4.0),
+    "repel_attach_bonus":    TunableSpec(0.5,  0.1,  0.0,   3.0),
 }
 
 
