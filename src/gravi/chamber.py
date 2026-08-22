@@ -124,9 +124,11 @@ class Chamber:
         so the tie breaks to the +u wall deterministically, because the offline
         validator has to reproduce it.
 
-        Distance is clamped at zero for a player already past the wall. A
-        negative distance would invert the push into a pull and suck them
-        through it; they die on the next bounds check either way.
+        Distance is clamped at zero for a player already past the wall, so no
+        consumer can extrapolate out there. `field.surface_force` clamps again
+        for its own reasons; this one closes the same hole at the geometry
+        source, for any future consumer whose law is not that one. They die on
+        the next bounds check either way.
         """
         _t, u = self.local(x, y)
         px, py = self.perp

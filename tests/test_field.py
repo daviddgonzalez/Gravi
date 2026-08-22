@@ -92,3 +92,33 @@ def test_a_negative_distance_is_contact_not_a_pull():
     force = surface_force(-50.0, (1.0, 0.0), params, 260.0)
     assert force[0] > 0.0
     assert force == pytest.approx((15.0 * 260.0, 0.0))
+
+
+def test_a_nan_distance_produces_no_force_rather_than_a_phantom_one():
+    """A nan must degrade to nothing, not to a maximum-strength push.
+
+    The naive spelling `distance >= reach` is False for nan, so it falls
+    through to `max(0.0, distance)` — which returns 0.0, because `nan > 0.0`
+    is also False — laundering the nan into "at contact" and handing back a
+    full-strength, correctly-directed phantom force. That is worse than nan
+    poisoning: a nan velocity is loud, this is indistinguishable downstream
+    from a real wall hit. field.py is shared with the trainer, where unstable
+    exploration produces nan positions routinely.
+    """
+    params = FieldParams(k_attract=15.0, k_repel=15.0, force_max=1e9)
+    assert surface_force(float("nan"), (1.0, 0.0), params, 260.0) == (0.0, 0.0)
+
+
+def test_an_infinite_distance_produces_no_force():
+    params = FieldParams(k_attract=15.0, k_repel=15.0, force_max=1e9)
+    assert surface_force(float("inf"), (1.0, 0.0), params, 260.0) == (0.0, 0.0)
+
+
+def test_a_surface_pushes_along_a_diagonal_normal():
+    """The axis-aligned test cannot catch a component swap that happens to
+    preserve one axis; this pins both components to exact values."""
+    params = FieldParams(k_attract=15.0, k_repel=15.0, force_max=1e9)
+    normal = (0.6, 0.8)
+    force = surface_force(60.0, normal, params, 260.0)
+    magnitude = 15.0 * (260.0 - 60.0)
+    assert force == pytest.approx((magnitude * 0.6, magnitude * 0.8))

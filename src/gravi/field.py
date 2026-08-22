@@ -119,7 +119,17 @@ def surface_force(distance: float, normal: Vec, params: FieldParams,
     handed us an inward normal — the pair would then pull them further
     through. They die on the next bounds check regardless.
     """
-    if reach <= 0.0 or distance >= reach:
+    # `not (distance < reach)` rather than `distance >= reach`, so that a nan
+    # distance degrades to NO force. The naive spelling falls through for nan
+    # (every nan comparison is False) into `max(0.0, distance)`, which returns
+    # 0.0 — because `nan > 0.0` is False too — laundering the nan into "at
+    # contact" and handing back a full-strength, correctly-directed phantom
+    # push. That is worse than nan poisoning: a nan velocity is loud and breaks
+    # a draw call, whereas this is indistinguishable downstream from a real
+    # wall hit. Neither argument order was ever chosen deliberately. This
+    # module is shared with the trainer, where unstable exploration produces
+    # nan positions as a matter of course.
+    if reach <= 0.0 or not (distance < reach):
         return (0.0, 0.0)
     magnitude = params.k_repel * (reach - max(0.0, distance))
     magnitude = min(max(0.0, magnitude), params.force_max)

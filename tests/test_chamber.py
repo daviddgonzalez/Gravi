@@ -282,3 +282,33 @@ def test_the_normal_is_perpendicular_to_a_turned_corridor():
     _distance, normal = ch.nearest_wall(*ch.world(800.0, 300.0))
     assert normal[0] == pytest.approx(0.0)
     assert abs(normal[1]) == pytest.approx(1.0)
+
+
+def test_a_negative_zero_offset_takes_the_same_side_as_positive_zero():
+    """`local()` really can produce a signed -0.0, and the tie-break promises
+    determinism. IEEE-754 makes `-0.0 >= 0.0` true, so `>=` is the correct
+    spelling — but a future "optimisation" to math.copysign or a bit-level
+    sign test would break it, and the repeated-call test above would not
+    notice. This one would."""
+    params = ChamberParams(depth=1600.0, half_width=460.0)
+    ch = make_chamber(0, (0.0, 0.0), (1.0, 0.0), params, seed=1)
+
+    positive = ch.nearest_wall(*ch.world(800.0, 0.0))
+    negative = ch.nearest_wall(*ch.world(800.0, -0.0))
+
+    assert math.copysign(1.0, -0.0) == -1.0, "the test needs a real signed zero"
+    assert positive == negative
+
+
+def test_a_chamber_direction_stays_unit_through_many_turns():
+    """nearest_wall's normal is perp(direction), and that normal is multiplied
+    straight into a force magnitude by field.surface_force. A direction that
+    drifted off unit length would silently scale every wall push, with no
+    exception and no failing assertion anywhere."""
+    params = ChamberParams(depth=1600.0, half_width=460.0)
+    chain = ChamberChain(seed=4, params=params)
+    chain.ensure_ahead(120)
+    for ch in chain.chambers:
+        assert math.hypot(*ch.direction) == pytest.approx(1.0, abs=1e-12)
+        _distance, normal = ch.nearest_wall(*ch.world(800.0, 100.0))
+        assert math.hypot(*normal) == pytest.approx(1.0, abs=1e-12)
