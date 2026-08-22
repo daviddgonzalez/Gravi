@@ -12,15 +12,44 @@ open; writing PROCEED here without playing would close it dishonestly.
 
 ## Decision
 
-PENDING. Requires the five-minute browser playtest below.
+PENDING. Criteria 1 and 3 have been played and answered (2026-08-22);
+criterion 2 and the numbers are still outstanding. Flip cadence after A4 —
+a turn every 3–7 chambers — was reported good.
 
 ## Criteria
 
 | # | Criterion | Verdict | Reasoning |
 |---|---|---|---|
-| 1 | **No re-orientation beat.** After crossing an arrow you can read your arc and commit to the next grab immediately. | UNJUDGED | Needs play. |
+| 1 | **No re-orientation beat.** After crossing an arrow you can read your arc and commit to the next grab immediately. | **YES** (2026-08-22) | Author, after playing the post-A4 build: "the no re-orientation beat test is good". |
 | 2 | **Comfortable at the one rate we ship.** Five minutes at the shipped flip rate, without motion sickness. | UNJUDGED — but see amendment A1 | The author reported the prototype's rotation as nauseating on 2026-08-17, which is what produced A1. That is a report against the *prototype*, not this build, so it is context rather than a verdict. |
-| 3 | **A bad crossing is your fault.** You can see the arrow coming, and when you cross it badly you know why. | UNJUDGED | Needs play. |
+| 3 | **A bad crossing is your fault.** You can see the arrow coming, and when you cross it badly you know why. | **MOSTLY — one named exception** (2026-08-22) | Author: "the only deaths that feel unlucky are when you flip gravities and no nodes are near". So the criterion holds for crossings the player misjudged, and fails for one specific case: gravity turns, the new fall direction has nothing grabbable in reach, and there is no play available. That is not a crossing the player got wrong — it is a chamber with no answer. See "The one unlucky death" below. |
+
+## The one unlucky death
+
+Reported 2026-08-22, and the only thing standing between criterion 3 and a
+clean yes: **you flip gravity and there is nothing in reach to grab.** Every
+other death the author reported reads as earned.
+
+Worth being precise about whose fault this is. It is not the flip and it is not
+the camera — the author passed criterion 1 in the same breath. It is that the
+player's only two verbs both require a node, so a moment with no node in reach
+is a moment with no verb. Core spec §2.3 already anticipated this and assigned
+the answer: *"Repel gets a permanent job: the emergency out when an approach was
+misjudged"*, and *"Charged surfaces obey the same law. Repel off a wall to
+launch without touching it."* A corridor always has walls. Today they are only
+lethal boundaries, never surfaces you can push off, so the emergency out exists
+in the spec and not in the game.
+
+Two candidate fixes, and they pull in opposite directions:
+
+- **Charged surfaces (repel off a wall).** Directly removes the no-verb moment,
+  because a wall is always there. Already specced, already one of the five
+  entity types, escalation table introduces them at chambers 4–8.
+- **A repel charge budget.** Requested by the author the same day. This makes
+  the emergency out *scarce*, which by itself would make this exact death class
+  **worse**, not better — an empty meter at the moment of a flip is precisely a
+  moment with no verb. If both ship, the budget must never be the reason the
+  out was unavailable during a flip.
 
 ## What changed during implementation
 
