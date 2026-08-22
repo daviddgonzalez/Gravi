@@ -28,7 +28,7 @@ import math
 
 from .chamber import ChamberChain
 from .config import PHYS_DT
-from .field import Charge, FieldParams, Node, charge_force
+from .field import Charge, FieldParams, Node, charge_force, surface_force
 from .gravity import QUARTER, GravityState
 
 # _rotate_on_rope's radius appears in two denominators: the unit radial
@@ -58,6 +58,7 @@ class World:
         fall_speed_max: float = math.inf,
         rigid_rope: bool = True,
         dt: float = PHYS_DT,
+        wall_reach: float = 260.0,
     ) -> None:
         self.chain = chain
         self.params = params
@@ -73,6 +74,10 @@ class World:
         # passing rigid_rope=False here.
         self.rigid_rope = rigid_rope
         self.dt = dt
+        # Corridor walls are repel-able surfaces (2026-08-22 design doc). A
+        # corridor always has one, which is what removes the no-verb moment
+        # after a gravity turn.
+        self.wall_reach = wall_reach
 
         self.x = 0.0
         self.y = 0.0
@@ -204,6 +209,16 @@ class World:
             # and left in place as a guard rather than an exception.
             fx, fy = charge_force(self.x, self.y, node, charge, self.params,
                                   ignore_radius=charge is Charge.ATTRACT)
+            ax += fx
+            ay += fy
+        elif node is None and charge is Charge.REPEL:
+            # No node in reach, so the wall is what is left. It is a FALLBACK,
+            # never an extra force stacked on node play: a node in range always
+            # wins the branch above. The rule a player can hold in their head is
+            # "the wall is what you have when you have nothing else".
+            distance, normal = self.chain.current.nearest_wall(self.x, self.y)
+            fx, fy = surface_force(distance, normal, self.params,
+                                   self.wall_reach)
             ax += fx
             ay += fy
         # A rigid rope supplies exactly the tension its constraint needs, so

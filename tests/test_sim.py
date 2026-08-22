@@ -25,7 +25,7 @@ def chain_with(nodes, params=None):
 
 def make_world(nodes=(), flip_duration=0.3, gravity=500.0, spawn=None,
                chamber_params=None, player_radius=7.0, speed_max=600.0,
-               fall_speed_max=600.0, rigid_rope=False):
+               fall_speed_max=600.0, rigid_rope=False, wall_reach=260.0):
     # rigid_rope defaults to False (the spring) here even though World itself
     # now defaults to True (the rigid rope, played and adopted 2026-08-20).
     # Every "slice 1 regressions" test below this point was written against
@@ -43,6 +43,7 @@ def make_world(nodes=(), flip_duration=0.3, gravity=500.0, spawn=None,
         speed_max=speed_max,
         fall_speed_max=fall_speed_max,
         rigid_rope=rigid_rope,
+        wall_reach=wall_reach,
     )
     if spawn is not None:
         w.x, w.y = spawn
@@ -788,3 +789,90 @@ def test_world_defaults_to_the_rigid_rope():
         speed_max=600.0,
     )
     assert w.rigid_rope is True
+
+
+def test_repel_pushes_off_the_nearer_wall_when_no_node_is_in_reach():
+    """The whole point: a corridor always has a wall, so there is no longer a
+    position in the game with no verb available."""
+    w = make_world(flip_duration=0.0)          # chamber 0 has no nodes
+    ch = w.chain.current
+    px, py = ch.perp
+    w.x, w.y = ch.world(400.0, 380.0)          # 80 from the +u wall
+    w.vx = w.vy = 0.0
+
+    for _ in range(30):
+        w.step(Charge.REPEL)
+
+    lateral = w.vx * px + w.vy * py
+    assert lateral < -1.0, "must be pushed back toward the centre lane"
+
+
+def test_a_wall_out_of_reach_does_nothing():
+    w = make_world(flip_duration=0.0, wall_reach=100.0)
+    ch = w.chain.current
+    px, py = ch.perp
+    w.x, w.y = ch.world(400.0, 0.0)            # 460 from either wall
+    w.vx = w.vy = 0.0
+
+    for _ in range(30):
+        w.step(Charge.REPEL)
+
+    lateral = w.vx * px + w.vy * py
+    assert lateral == pytest.approx(0.0, abs=1e-9)
+
+
+def test_a_node_in_range_wins_over_the_wall():
+    """The wall is the fallback, not an extra force stacked on node play."""
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    here = ch.world(400.0, 380.0)
+    near = ch.world(300.0, 380.0)              # 100 back along the corridor
+    w.chain.chambers[0] = replace(
+        w.chain.chambers[0],
+        nodes=(Node(near[0], near[1], 300.0, 10.0),))
+    w.x, w.y = here
+    w.vx = w.vy = 0.0
+
+    w.step(Charge.REPEL)
+
+    # The node sits BEHIND the player along the corridor, so a node push moves
+    # them along +t. A wall push would move them across, along -u. Only one of
+    # those may happen.
+    t_component = w.vx * ch.direction[0] + w.vy * ch.direction[1]
+    assert t_component > 0.0, "the node, not the wall, must be pushing"
+
+
+def test_a_player_crossing_a_turn_can_save_themselves_on_a_wall():
+    """The death this whole design exists to remove. Cross a turn at full
+    speed with nothing to grab, hold repel, and the trajectory must change
+    before the wall arrives."""
+    w = make_world(flip_duration=0.0)
+    ch = _seek_chamber(w, turning=True)
+    start = w.chain.at
+    w.x, w.y = ch.world(ch.params.depth - 2.0, 0.0)
+    w.vx = ch.direction[0] * 600.0
+    w.vy = ch.direction[1] * 600.0
+    for _ in range(20):
+        w.step(Charge.NEUTRAL)
+        if w.chain.at > start:
+            break
+    assert w.chain.at > start, "the test needs an actual crossing"
+
+    nxt = w.chain.current
+    # Strip the node field so the wall really is the only thing available.
+    # chambers[0].index is the oldest retained chamber, which is how you turn a
+    # chamber index into a list position without touching a private attribute.
+    w.chain.chambers[w.chain.at - w.chain.chambers[0].index] = replace(
+        nxt, nodes=())
+    nxt = w.chain.current
+    px, py = nxt.perp
+    before = w.vx * px + w.vy * py
+
+    for _ in range(120):                        # half a second
+        w.step(Charge.REPEL)
+        if w.dead:
+            break
+
+    after = w.vx * px + w.vy * py
+    assert abs(after) < abs(before), (
+        f"repel must bleed off the lateral rush: {before} -> {after}")
