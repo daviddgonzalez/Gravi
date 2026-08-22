@@ -255,5 +255,37 @@ def draw_trail(surface: pygame.Surface, points, camera) -> None:
     _composite(surface, layer, rect)
 
 
+CHARGE_GAP = 0.22          # radians of blank between arcs
+
+
+def draw_charges(surface: pygame.Surface, x: float, y: float,
+                 charges: float, charges_max: float, player_radius: float,
+                 camera) -> None:
+    """The repel budget, as arcs orbiting the player.
+
+    Drawn on the player and in the repel hue rather than as a bar in a corner,
+    because in this game light IS the ruleset (spec section 7) and a resource
+    should speak the same language as the force it pays for. A partly-spent
+    charge dims its own arc rather than vanishing, so the reading is continuous
+    like the beam's intensity is.
+    """
+    whole = max(1, int(round(charges_max)))
+    radius = camera.scale_length(player_radius) * 2.4
+    if radius < 4.0:
+        return                          # too small to read; do not draw noise
+    sx, sy = camera.to_screen(x, y)
+    span = (2.0 * math.pi / whole) - CHARGE_GAP
+    box = pygame.Rect(int(sx - radius), int(sy - radius),
+                      int(radius * 2), int(radius * 2))
+
+    for index in range(whole):
+        filled = max(0.0, min(1.0, charges - index))
+        if filled <= 0.0:
+            continue
+        start = index * (2.0 * math.pi / whole) + CHARGE_GAP * 0.5
+        pygame.draw.arc(surface, _scaled(config.COLOR_BEAM_REPEL, filled),
+                        box, start, start + span, 2)
+
+
 def force_magnitude(fx: float, fy: float) -> float:
     return math.hypot(fx, fy)

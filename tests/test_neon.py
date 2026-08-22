@@ -215,3 +215,34 @@ def test_a_straight_chamber_draws_no_arrow(screen):
     screen.fill(config.COLOR_BG)
     neon.draw_arrow(screen, turning, IDENTITY)
     assert peak_brightness(screen, *middle) > brightness(screen, 400, 300)
+
+
+def test_a_full_charge_ring_reads_brighter_than_an_empty_one(screen):
+    """The budget has to be legible without a UI bar — it is drawn on the
+    player, in the colour of the verb it powers (2026-08-22 design doc 5)."""
+    cam = Camera(800, 600)
+    cam.update(400.0, 300.0, angle=0.0, rotating=False, lead=0.0)
+
+    screen.fill(config.COLOR_BG)
+    neon.draw_charges(screen, 400.0, 300.0, 3.0, 3.0, 12.0, cam)
+    full = sum(peak_brightness(screen, 400 + dx, 300 + dy)
+               for dx, dy in ((28, 0), (-28, 0), (0, 28), (0, -28)))
+
+    screen.fill(config.COLOR_BG)
+    neon.draw_charges(screen, 400.0, 300.0, 0.0, 3.0, 12.0, cam)
+    empty = sum(peak_brightness(screen, 400 + dx, 300 + dy)
+                for dx, dy in ((28, 0), (-28, 0), (0, 28), (0, -28)))
+
+    assert full > empty
+
+
+def test_a_partial_charge_reads_between_empty_and_full(screen):
+    cam = Camera(800, 600)
+    cam.update(400.0, 300.0, angle=0.0, rotating=False, lead=0.0)
+    levels = []
+    for charge in (0.0, 1.5, 3.0):
+        screen.fill(config.COLOR_BG)
+        neon.draw_charges(screen, 400.0, 300.0, charge, 3.0, 12.0, cam)
+        levels.append(sum(peak_brightness(screen, 400 + dx, 300 + dy)
+                          for dx, dy in ((28, 0), (-28, 0), (0, 28), (0, -28))))
+    assert levels[0] < levels[1] < levels[2]

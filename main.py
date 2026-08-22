@@ -68,6 +68,12 @@ def build_world(seed: int, tunables: dict[str, float], chain=None) -> World:
         player_radius=tunables["player_radius"],
         speed_max=tunables["speed_max"],
         fall_speed_max=tunables["fall_speed_max"],
+        wall_reach=tunables["wall_reach"],
+        repel_charges_max=tunables["repel_charges_max"],
+        repel_charge_seconds=tunables["repel_charge_seconds"],
+        repel_min_spend=tunables["repel_min_spend"],
+        repel_regen=tunables["repel_regen"],
+        repel_attach_bonus=tunables["repel_attach_bonus"],
     )
 
 
@@ -90,6 +96,18 @@ def apply_tunables(world: World, tunables: dict[str, float]) -> bool:
     world.player_radius = tunables["player_radius"]
     world.speed_max = tunables["speed_max"]
     world.fall_speed_max = tunables["fall_speed_max"]
+    world.wall_reach = tunables["wall_reach"]
+    world.repel_charges_max = tunables["repel_charges_max"]
+    world.repel_charge_seconds = tunables["repel_charge_seconds"]
+    world.repel_min_spend = tunables["repel_min_spend"]
+    world.repel_regen = tunables["repel_regen"]
+    world.repel_attach_bonus = tunables["repel_attach_bonus"]
+    # Sweeping the max down live must not leave the tank reading over-full —
+    # the arcs draw one per whole charge up to charges_max, so an un-clamped
+    # tank would either draw a phantom arc or silently cap the count while the
+    # float stays stale above it. Clamping here matches what reset() and the
+    # regen path already enforce: repel_charges never exceeds the current max.
+    world.repel_charges = min(world.repel_charges, world.repel_charges_max)
     return world.chain.params != chamber_params(tunables)
 
 
@@ -347,6 +365,9 @@ async def main() -> None:
 
         if not world.dead:
             neon.draw_player(screen, world.x, world.y, world.player_radius, camera)
+            neon.draw_charges(screen, world.x, world.y, world.repel_charges,
+                              world.repel_charges_max, world.player_radius,
+                              camera)
 
         if show_hud:
             # Screen space: the HUD never goes through the camera.
