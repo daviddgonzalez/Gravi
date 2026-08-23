@@ -846,14 +846,50 @@ def test_a_node_in_range_wins_over_the_wall():
     # The node sits BEHIND the player along the corridor, so a node push moves
     # them along +t. A wall push would move them across, along -u. Only one of
     # those may happen.
+    #
+    # Both components are checked deliberately. The along-corridor (t)
+    # component alone cannot distinguish "the node won" from "the node and
+    # the wall both fired": the node is directly behind the player here (same
+    # u = 380), so a correct node-only push has zero u component by
+    # construction, while a wall force stacked on top would add a nonzero one
+    # -- the player sits at u = 380 with wall_reach = 260 and half_width =
+    # 460, so the wall (distance 80) is well within reach and a stray push
+    # would be large and obvious. A prior version of this test asserted only
+    # t_component > 0.0, and that version kept passing even after the whole
+    # wall-fallback branch was deleted and after a "wall force stacks on top
+    # of node force" bug was injected in its place.
+    px, py = ch.perp
     t_component = w.vx * ch.direction[0] + w.vy * ch.direction[1]
+    u_component = w.vx * px + w.vy * py
     assert t_component > 0.0, "the node, not the wall, must be pushing"
+    assert u_component == pytest.approx(0.0, abs=1e-6), (
+        "a wall force must not stack on top of the node force")
 
 
 def test_a_player_crossing_a_turn_can_save_themselves_on_a_wall():
     """The death this whole design exists to remove. Cross a turn at full
     speed with nothing to grab, hold repel, and the trajectory must change
-    before the wall arrives."""
+    before the wall arrives.
+
+    The window has to run well past the natural crossing time and the check
+    has to be something a drag implementation cannot satisfy. A magnitude
+    decrease alone is satisfiable by drag: an isotropic `ax -= k*vx` gated on
+    the same `distance < wall_reach` check (no directional push at all) also
+    shrinks the lateral speed inside a short window, and shrinks it FASTER
+    than the real push does -- 600 -> 223 for drag versus 600 -> 505 for the
+    real push over the first 120 steps (0.5 s) -- so a 0.5 s window asserting
+    only `abs(after) < abs(before)` cannot tell a save from mere friction.
+    Drag is not a save: it never reverses the player's direction of travel,
+    it only slows the drift into the wall down. The real directional push
+    does reverse it, but only after the player has had time to travel back
+    off the wall, which this design doc measured at ~0.77 s. So the window
+    here runs to 290 steps (~1.2 s, safely past that crossing) and the
+    assertion is that the lateral velocity changes SIGN -- the player is
+    actually retreating from the wall, not just approaching it more slowly.
+    The original magnitude assertion is kept too, since it still holds over
+    this longer window (600 -> ~596, just barely, right before the fully
+    reversed velocity re-saturates the carry-speed clamp).
+    """
     w = make_world(flip_duration=0.0)
     ch = _seek_chamber(w, turning=True)
     start = w.chain.at
@@ -876,14 +912,80 @@ def test_a_player_crossing_a_turn_can_save_themselves_on_a_wall():
     px, py = nxt.perp
     before = w.vx * px + w.vy * py
 
-    for _ in range(120):                        # half a second
+    for _ in range(290):                        # ~1.2 seconds
         w.step(Charge.REPEL)
         if w.dead:
             break
 
+    assert not w.dead, "the wall push exists so this crossing survives"
     after = w.vx * px + w.vy * py
     assert abs(after) < abs(before), (
         f"repel must bleed off the lateral rush: {before} -> {after}")
+    assert before * after < 0.0, (
+        "the lateral velocity must change sign -- the player must actually "
+        f"be retreating from the wall, not merely approaching it more "
+        f"slowly (which drag alone can also achieve): {before} -> {after}")
+
+
+def test_leaving_a_nodes_ring_near_a_wall_can_snap():
+    """Pins a measured force discontinuity at the node-to-wall handoff. This
+    is NOT a bug to quietly fix -- see the wall-fallback branch in sim.py and
+    design doc section 10 -- it is a known playtest risk, and this test exists
+    so nobody "cleans up" the force law without knowing what they are
+    changing.
+
+    Node repel is k*(radius - r): zero at the ring's rim by construction.
+    Wall repel is a function of an unrelated quantity, distance to the
+    corridor wall, so nothing makes the handoff between the two continuous.
+    With the shipped constants used here (k_repel=15, force_max=4500,
+    wall_reach=260, half_width=460), a node at u=200 with radius=260 has a
+    ring edge that lands exactly on the wall. Sampling 200 generated chambers
+    (893 nodes, real make_chamber defaults) found 100% of nodes have a ring
+    edge reaching into the wall_reach band, and 21.1% reach or pass the wall
+    outright -- this is not a rare corner case.
+
+    The player is placed a hair inside the ring (still latched: node force is
+    ~0, correctly, since they are at the rim) and then a hair outside it
+    (latch dropped, so the wall branch fires instead: a large force, because
+    the player also happens to be at the wall). The jump from ~0 to ~3900 is
+    the measured discontinuity.
+    """
+    shipped_params = FieldParams(k_attract=8.0, k_repel=15.0, force_max=4500.0)
+    radius = 260.0
+    node_u = 200.0
+    half_width = 460.0            # ChamberParams default
+    wall_reach = 260.0            # make_world default
+    rim_u = node_u + radius       # 460.0 -- exactly at the wall
+
+    w = make_world(
+        nodes=[Node(0.0, 0.0, radius=radius, core_radius=10.0)],
+        flip_duration=0.0, gravity=0.0, wall_reach=wall_reach)
+    w.params = shipped_params
+    ch = w.chain.current
+    node_x, node_y = ch.world(400.0, node_u)
+    w.chain.chambers[0] = replace(
+        w.chain.chambers[0],
+        nodes=(Node(node_x, node_y, radius=radius, core_radius=10.0),))
+
+    epsilon = 1e-6
+
+    # Just inside the ring: still latched, node force approx zero.
+    w.x, w.y = ch.world(400.0, rim_u - epsilon)
+    w.vx = w.vy = 0.0
+    w.step(Charge.REPEL)
+    assert w.latched_node() is not None, "must still be latched at the rim"
+    node_force = math.hypot(w.vx, w.vy) / w.dt
+    assert node_force == pytest.approx(0.0, abs=1e-2), (
+        f"node force at the rim should be ~0, got {node_force}")
+
+    # Just outside the ring, at the wall: latch drops, wall takes over.
+    w.x, w.y = ch.world(400.0, rim_u + epsilon)
+    w.vx = w.vy = 0.0
+    w.step(Charge.REPEL)
+    assert w.latched_node() is None, "must have dropped the latch past the rim"
+    wall_force = math.hypot(w.vx, w.vy) / w.dt
+    assert wall_force == pytest.approx(3900.0, abs=1.0), (
+        f"expected the measured ~3900 wall force, got {wall_force}")
 
 
 def test_a_press_in_open_space_is_free():

@@ -247,3 +247,14 @@ Nothing here touches attract, the rigid rope, gravity, or the camera.
   optimal play "tap at exactly the floor, repeatedly"?
 - Does repel costing charge make the player hoard it and die holding a full
   meter — the opposite failure to the one this fixes?
+- Node repel fades to zero at the ring's rim by design, but wall repel is a
+  function of an unrelated quantity (distance to the corridor wall), so
+  nothing makes the handoff between them continuous. With the shipped
+  constants (`k_repel=15`, `force_max=4500`, `wall_reach=260`,
+  `half_width=460`), a node at `u=200` with `radius=260` produces a measured
+  jump from `0.000` to `3900.000` at the instant its ring's latch breaks near
+  a wall — and sampling 200 generated chambers found 100% of nodes have a
+  ring edge reaching into the wall_reach band, with 21.1% reaching or passing
+  the wall outright. Does leaving a node's ring near a wall read, in play, as
+  the wall correctly taking over — or as a snap? This is not to be fixed by
+  changing the force law before that question is answered.

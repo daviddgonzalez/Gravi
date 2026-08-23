@@ -249,6 +249,45 @@ class World:
             # never an extra force stacked on node play: a node in range always
             # wins the branch above. The rule a player can hold in their head is
             # "the wall is what you have when you have nothing else".
+            #
+            # This branch and the rigid rope are mutually exclusive by charge
+            # value alone: rigid requires Charge.ATTRACT (see `rigid` above),
+            # this branch requires Charge.REPEL. A player who releases a rigid
+            # rope by switching to repel drops the latch on the same step and
+            # can land straight in here with no residual rope state left
+            # behind. That is correct, just non-obvious enough to write down.
+            #
+            # Known discontinuity, deliberately left for the playtest (design
+            # doc §10): node repel is k*(radius - r), zero at the ring's rim
+            # by construction. Wall repel is a function of an unrelated
+            # quantity, distance to the corridor wall, so nothing makes the
+            # handoff between the two continuous. Measured with shipped
+            # constants (k_repel=15, force_max=4500, wall_reach=260,
+            # half_width=460): a node at u=200 with radius=260 hands off from
+            # a node force of 0.000 to a wall force of 3900.000 at the exact
+            # step its latch breaks. Sampling 200 generated chambers (893
+            # nodes) found 100% have a ring edge reaching into the wall_reach
+            # band and 21.1% reach or pass the wall outright, so this is not
+            # a rare corner case. Do NOT "fix" this by changing either force
+            # law without a playtest verdict on whether it reads as the wall
+            # taking over or as a snap — see the pinned regression test
+            # `test_leaving_a_nodes_ring_near_a_wall_can_snap` in
+            # tests/test_sim.py.
+            #
+            # `self.chain.current` (not the geometrically-nearer chamber) is
+            # deliberate here, and it is only correct because both this call
+            # and `_check_bounds`'s death check below key off the SAME
+            # `chain.current` within one step, and `chain.advance()` cannot
+            # run until after this force computation finishes. At a turn,
+            # adjacent chamber boxes genuinely overlap in world space: a point
+            # can be simultaneously (t=1500, u=-455) in the old chamber and
+            # (t=455, u=-100) in the next. `chain.current` (the old chamber)
+            # reports distance=5.0 here -- correctly dangerous, since |u|=455
+            # is only 95 short of the death threshold of half_width +
+            # side_grace = 550. The "geometrically real" next chamber would
+            # report 360 -- falsely safe, suppressing the push exactly when
+            # it is needed. A future refactor toward proper chamber-box
+            # containment must not break this coupling without checking it.
             distance, normal = self.chain.current.nearest_wall(self.x, self.y)
             fx, fy = surface_force(distance, normal, self.params,
                                    self.wall_reach)
