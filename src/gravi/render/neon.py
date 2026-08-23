@@ -271,8 +271,14 @@ def draw_charges(surface: pygame.Surface, x: float, y: float,
     """
     whole = max(1, int(round(charges_max)))
     radius = camera.scale_length(player_radius) * 2.4
-    if radius < 4.0:
-        return                          # too small to read; do not draw noise
+    # A floor, not a bail-out. player_radius is itself live-tunable down to 2,
+    # so a small player plus a wide view would otherwise make the whole readout
+    # VANISH — the threshold is view_width > player_radius * 768, unreachable at
+    # the default radius of 12 but trivially reachable at 6. The design doc's
+    # fallback for "unreadable at some settings" is a dimmer cue, never an
+    # absent one: a player who cannot see the arcs must not conclude they have
+    # no charges.
+    radius = max(radius, 6.0)
     sx, sy = camera.to_screen(x, y)
     span = (2.0 * math.pi / whole) - CHARGE_GAP
     box = pygame.Rect(int(sx - radius), int(sy - radius),

@@ -217,6 +217,20 @@ def test_a_straight_chamber_draws_no_arrow(screen):
     assert peak_brightness(screen, *middle) > brightness(screen, 400, 300)
 
 
+# Points that land ON the three arcs, at the centre of each.
+#
+# The obvious cardinal set is wrong here: with three charges the arcs are
+# centred at 60, 180 and 300 degrees, so due EAST sits permanently in an
+# inter-arc gap and reads background at every charge level — it contributes
+# nothing to the sum either way. Measured radius is ~25-28px for a
+# player_radius of 12 at 1:1 (pygame strokes inward of the nominal 28.8).
+ARC_SAMPLES = (
+    (14, -24),      # 60 degrees; screen y is down, so sin is negated
+    (-28, 0),       # 180 degrees
+    (14, 24),       # 300 degrees
+)
+
+
 def test_a_full_charge_ring_reads_brighter_than_an_empty_one(screen):
     """The budget has to be legible without a UI bar — it is drawn on the
     player, in the colour of the verb it powers (2026-08-22 design doc 5)."""
@@ -226,12 +240,12 @@ def test_a_full_charge_ring_reads_brighter_than_an_empty_one(screen):
     screen.fill(config.COLOR_BG)
     neon.draw_charges(screen, 400.0, 300.0, 3.0, 3.0, 12.0, cam)
     full = sum(peak_brightness(screen, 400 + dx, 300 + dy)
-               for dx, dy in ((28, 0), (-28, 0), (0, 28), (0, -28)))
+               for dx, dy in ARC_SAMPLES)
 
     screen.fill(config.COLOR_BG)
     neon.draw_charges(screen, 400.0, 300.0, 0.0, 3.0, 12.0, cam)
     empty = sum(peak_brightness(screen, 400 + dx, 300 + dy)
-                for dx, dy in ((28, 0), (-28, 0), (0, 28), (0, -28)))
+                for dx, dy in ARC_SAMPLES)
 
     assert full > empty
 
@@ -244,5 +258,23 @@ def test_a_partial_charge_reads_between_empty_and_full(screen):
         screen.fill(config.COLOR_BG)
         neon.draw_charges(screen, 400.0, 300.0, charge, 3.0, 12.0, cam)
         levels.append(sum(peak_brightness(screen, 400 + dx, 300 + dy)
-                          for dx, dy in ((28, 0), (-28, 0), (0, 28), (0, -28))))
+                          for dx, dy in ARC_SAMPLES))
     assert levels[0] < levels[1] < levels[2]
+
+
+def test_the_charge_readout_never_vanishes_at_a_small_player_and_a_wide_view(screen):
+    """player_radius is live-tunable down to 2, and view_width up to 4800. A
+    bail-out below a minimum radius made the whole readout disappear at those
+    settings, with nothing to tell the player their charges were not simply
+    gone. The floor keeps it dim rather than absent."""
+    cam = Camera(800, 600)
+    cam.update(400.0, 300.0, angle=0.0, rotating=False,
+               view_width=4800.0, lead=0.0)
+
+    screen.fill(config.COLOR_BG)
+    neon.draw_charges(screen, 400.0, 300.0, 3.0, 3.0, 2.0, cam)
+
+    dark = brightness(screen, 400, 380)
+    lit = max(peak_brightness(screen, 400 + dx, 300 + dy, window=8)
+              for dx, dy in ((0, -6), (-6, 0), (6, 0), (0, 6)))
+    assert lit > dark, "something must still be drawn"
