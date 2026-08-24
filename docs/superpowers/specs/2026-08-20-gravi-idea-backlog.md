@@ -57,7 +57,14 @@ now does (`turn_schedule`). Does a hazard kill, or deflect?
 
 ---
 
-## 3. The repel charge system
+## 3. The repel charge system — **BUILT 2026-08-22/23, no longer a backlog item**
+
+Specced in `2026-08-22-gravi-charged-surfaces-and-repel-charges-design.md`,
+built, reviewed, and merged to main in PR #2. Walls became repel-able surfaces
+AND take priority over nodes; repel drains a rechargeable budget drawn as arcs
+of light on the player; core spec §2.3 carries the amendment permitting the
+meter. Everything below this line is the original entry, kept for the reasoning
+rather than as work to do.
 
 **The idea.** Repel stops being always-available. Hold to spend a full charge,
 tap to spend half. Charges recover passively, or by attaching to nodes. Usable
@@ -125,9 +132,13 @@ changes what a wall is *for*, which changes what an elbow's outer wall should be
 The elbow is the most expensive thing to build and the most expensive thing to
 throw away.
 
-**And none of it should start before the slice 2 verdict.** That gate has been
-open since 2026-08-17, the build has never been played for five minutes, and the
-force-law constants cannot be frozen until it closes (session map invariant 2,
-which blocks S7 from baking a chamber library). Gravity modes and the rigid rope
-shipped today and have not been played either. Every idea above is a guess about
-a game nobody has finished evaluating.
+**Status as of 2026-08-24.** The slice 2 gate closed PROCEED and the branch is
+merged. Item 3 shipped. Items 1, 2 and 4 have not been built, and the ordering
+argument above still holds: crystals are the smallest and may make hazards
+unnecessary, and the elbow is the most expensive to build and to throw away.
+
+What play has since established, and what a monotony pass should start from:
+the corridor is comfortable, legible, and not nauseating; a bad crossing reads
+as the player's fault; and the remaining complaint is that it is **repetitive**.
+That is a different problem from any this backlog was written against — it is
+about variety over minutes, not about a single moment being unfair.
