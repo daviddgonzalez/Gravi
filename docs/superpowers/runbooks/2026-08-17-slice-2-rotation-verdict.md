@@ -1,7 +1,8 @@
 # Slice 2 rotation verdict
 
-**Status: OPEN — not yet judged.** Everything below the line marked *machine
-evidence* is verified. The three criteria are judged by playing, and nobody
+**Status: CLOSED — PROCEED, 2026-08-23.** Everything below the line marked *machine
+evidence* is verified. The three criteria were judged from play on 2026-08-22
+and 2026-08-23. The three criteria are judged by playing, and nobody
 has played this build yet, so the decision line stays PENDING rather than
 being filled in from a build that merely boots. Slice 1's verdict recorded
 exactly this gap ("built and booted, not played in a browser") and it is still
@@ -12,16 +13,23 @@ open; writing PROCEED here without playing would close it dishonestly.
 
 ## Decision
 
-PENDING. Criteria 1 and 3 have been played and answered (2026-08-22);
-criterion 2 and the numbers are still outstanding. Flip cadence after A4 —
-a turn every 3–7 chambers — was reported good.
+**PROCEED** (2026-08-23). All three criteria answered by the author from play.
+Flip cadence after A4 — a turn every 3–7 chambers — reported good.
+
+One gap recorded honestly rather than papered over: **the fps and
+physics-step figures were never captured as numbers.** The author reported
+them as "good" and reported being comfortable playing, which answers criterion
+2, but no figure was written down and no browser-versus-native comparison was
+made. Slice 1's verdict left the same gap and S4's Task 1 is the session that
+owns closing it — against `main`, before this branch merges, so a bad number
+can still be attributed to WASM rather than to the chamber work.
 
 ## Criteria
 
 | # | Criterion | Verdict | Reasoning |
 |---|---|---|---|
 | 1 | **No re-orientation beat.** After crossing an arrow you can read your arc and commit to the next grab immediately. | **YES** (2026-08-22) | Author, after playing the post-A4 build: "the no re-orientation beat test is good". |
-| 2 | **Comfortable at the one rate we ship.** Five minutes at the shipped flip rate, without motion sickness. | UNJUDGED — but see amendment A1 | The author reported the prototype's rotation as nauseating on 2026-08-17, which is what produced A1. That is a report against the *prototype*, not this build, so it is context rather than a verdict. |
+| 2 | **Comfortable at the one rate we ship.** Five minutes at the shipped flip rate, without motion sickness. | **YES** (2026-08-23) | Author: "i'm comfortable playing and the fps numbers are good". The nausea that produced amendment A1 was against the *prototype*'s rotation; the shipped build opens on the fixed camera with a turn every 3–7 chambers, and reads as comfortable. Note the fps figures were not captured as numbers — see the decision line. |
 | 3 | **A bad crossing is your fault.** You can see the arrow coming, and when you cross it badly you know why. | **MOSTLY — one named exception** (2026-08-22) | Author: "the only deaths that feel unlucky are when you flip gravities and no nodes are near". So the criterion holds for crossings the player misjudged, and fails for one specific case: gravity turns, the new fall direction has nothing grabbable in reach, and there is no play available. That is not a crossing the player got wrong — it is a chamber with no answer. See "The one unlucky death" below. |
 
 ## The one unlucky death
@@ -153,7 +161,21 @@ Force-law constants (`k_attract` 15.0, `k_repel` 15.0, `force_max` 4500.0,
 - The lane-clearance property holds over 300 seeds; a wider sweep of 300 seeds
   × 30 chambers found 0 chambers with nothing reachable from the lane.
 
-## Still to do — the gate
+## What the constants are, now that the gate says PROCEED
+
+The values below are the shipped defaults and they were **not swept** — the
+author judged the build comfortable at them rather than tuning to them, so they
+are settled by "nobody objected", which is weaker than "measured best". Anyone
+retuning them should know that.
+
+**S7 is unblocked by this verdict** (session map invariant 2), with one caveat
+that matters more than the verdict itself: the force law moved substantially
+*after* the criteria were judged. The rigid rope became the default, corridor
+walls became repel-able surfaces, and repel gained a rechargeable cost with
+walls taking priority over nodes. S7 must bake against the branch as merged,
+not against anything remembered from earlier in this session.
+
+## Still to do — the gate (all closed)
 
 1. Serve `build/web` and **play it in a browser for at least five minutes**,
    chaining crossings. `docs/web-build.md` has the recipe.
