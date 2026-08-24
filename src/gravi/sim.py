@@ -152,6 +152,21 @@ class World:
         found = self._nearest()
         return None if found is None else found[1]
 
+    def _resolve_latch(self, latch: tuple[int, int] | None) -> Node | None:
+        """Resolve a (chamber index, node index) latch tuple back to the Node
+        it names, or None if there is no such tuple, its chamber was culled
+        behind the player, or the editor deleted the node out from under it.
+        Shared by `latched_node` (for `_latch`) and the attach-bonus re-arm
+        check (for `_bonus_latch`) — both are the same kind of stale-index
+        problem."""
+        if latch is None:
+            return None
+        chamber_index, node_index = latch
+        chamber = self.chain.by_index(chamber_index)
+        if chamber is None or node_index >= len(chamber.nodes):
+            return None
+        return chamber.nodes[node_index]
+
     def latched_node(self) -> Node | None:
         """The node currently roped to, or None. Tracked by (chamber, node)
         index rather than by value because `Node` is frozen and compares by
@@ -159,18 +174,31 @@ class World:
         rope must follow the node to its new position instead of pointing at a
         stale copy. The chamber index also lets a rope survive right up to the
         moment its chamber is culled behind the player."""
-        if self._latch is None:
-            return None
-        chamber_index, node_index = self._latch
-        chamber = self.chain.by_index(chamber_index)
-        if chamber is None or node_index >= len(chamber.nodes):
-            # Culled behind us, or the editor deleted it out from under us.
+        node = self._resolve_latch(self._latch)
+        if node is None:
+            # Either there was no latch, or it was culled behind us, or the
+            # editor deleted it out from under us — either way, forget it.
             self._latch = None
-            return None
-        return chamber.nodes[node_index]
+        return node
 
     def _within(self, node: Node) -> bool:
         return math.hypot(node.x - self.x, node.y - self.y) <= node.radius
+
+    def _clear_stale_bonus_latch(self) -> None:
+        """The attach bonus re-arms once the player has actually LEFT the
+        ring of the node they were last paid for — not when they merely let
+        go of the button. `_update_latch` drops `_latch` on every NEUTRAL
+        frame regardless of whether the player left the node's ring, so
+        keying the re-arm off `_latch`/button state let a stationary mash of
+        ATTRACT on/off re-pay the bonus every cycle (a farmable, near-free
+        charge tank next to any node). `_bonus_latch` now survives release
+        and clears only when the node it names is gone (culled, or deleted
+        by the editor) or the player is no longer within its ring — i.e. when
+        the player actually did the work of leaving and can be paid again for
+        coming back."""
+        node = self._resolve_latch(self._bonus_latch)
+        if node is None or not self._within(node):
+            self._bonus_latch = None
 
     def _update_latch(self, charge: Charge) -> Node | None:
         """Releasing always drops the rope. What holding does depends on which
@@ -224,16 +252,17 @@ class World:
                  and charge is Charge.ATTRACT)
         self._update_rope(node, rigid)
 
+        self._clear_stale_bonus_latch()
         if (charge is Charge.ATTRACT and node is not None
                 and self._latch != self._bonus_latch):
             # Once per NEW latch, not per frame: grabbing is already how you
-            # steer, and now it is also how you rearm.
+            # steer, and now it is also how you rearm. Re-arms only once the
+            # player has left the node's ring (see _clear_stale_bonus_latch),
+            # not merely released the button.
             self._bonus_latch = self._latch
             self.repel_charges = min(
                 self.repel_charges_max,
                 self.repel_charges + self.repel_attach_bonus)
-        elif node is None:
-            self._bonus_latch = None
 
         # Mass is fixed at 1.0, so force == acceleration.
         ax = gx * self.gravity
@@ -300,6 +329,16 @@ class World:
             pushing = self._open_or_continue_press()
             if not pushing:
                 fx = fy = 0.0
+                # A failed payment must close the press (design doc 4.1): if
+                # the press stayed open here, `_press_used` would keep
+                # growing every frame the button stays held while
+                # `_press_paid` sits frozen at whatever the empty tank could
+                # afford, so `overrun` grows without bound and every future
+                # regen tick is immediately re-consumed trying to pay down a
+                # press that is producing nothing. That stranded the player
+                # until they physically released the button — exactly the
+                # "emergency out unavailable at a flip" state 4.1 forbids.
+                self._end_press()
         else:
             # A press cost is "settled when the press ends" (design doc 4):
             # the frame that closes it is still part of what the press paid
@@ -315,6 +354,12 @@ class World:
 
         if not pushing:
             # Regen and drain never fight over the same frame.
+            #
+            # This clamp is also what bites if `repel_charges_max` is swept
+            # DOWN mid-run: banked charge above the new max is clipped on the
+            # very next tick rather than eased off. Only reachable through
+            # the live-tuning overlay, never through play, so it is a note
+            # rather than a bug.
             self.repel_charges = min(
                 self.repel_charges_max,
                 self.repel_charges + self.repel_regen * self.dt)

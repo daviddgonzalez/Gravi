@@ -1009,6 +1009,38 @@ def test_a_push_drains_the_tank():
     assert w.repel_charges < before
 
 
+def test_a_node_repel_also_drains_the_tank():
+    """Design doc §4: 'The cost applies to every repel, against a node or a
+    wall — it is the verb that costs, not the target.' Every other charge
+    test in this file pushes against the WALL fallback (spawned 80 px from
+    the corridor wall, with no nodes); this one puts a node in range and
+    holds repel inside its ring, so the node branch of the cost is actually
+    exercised at least once."""
+    node = Node(400.0, 400.0, 250.0, 18.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    assert w.active_node() is node, "test setup must actually be inside the ring"
+    before = w.repel_charges
+    for _ in range(60):
+        w.step(Charge.REPEL)
+    assert w.repel_charges < before
+
+
+def test_holding_attract_never_decreases_charges_regardless_of_node_state():
+    """The only thing enforcing 'attract costs nothing' (design doc §4) is
+    one `if charge is Charge.REPEL` gate in step() — pin the invariant
+    directly, both with a node latched and with no node in reach at all."""
+    node = Node(400.0, 400.0, 250.0, 18.0)
+    for nodes in ([node], []):
+        w = lab_world(gravity=500.0, nodes=nodes, spawn=(300.0, 400.0))
+        w.repel_charges = 1.0
+        previous = w.repel_charges
+        for _ in range(600):
+            w.step(Charge.ATTRACT)
+            assert w.repel_charges >= previous - 1e-12
+            previous = w.repel_charges
+        assert not w.dead, "must survive the whole run for the invariant to mean anything"
+
+
 def test_a_tap_costs_at_least_the_floor():
     """Without the floor, a micro-tap is free and tap-spam replaces hold-spam."""
     w = make_world(flip_duration=0.0)
@@ -1074,9 +1106,104 @@ def test_a_new_attract_latch_pays_a_bonus_once():
 
     for _ in range(10):
         w.step(Charge.ATTRACT)
-    # Regen still ticks while attracting, so allow for it — what must NOT
-    # happen is a second bonus, which would be another whole attach_bonus.
-    assert w.repel_charges < after_first + w.repel_attach_bonus
+    # Regen still ticks while attracting, so account for exactly that much —
+    # not just "less than a second full bonus", which would also pass for a
+    # mis-scaled repeat (e.g. a half bonus slipping in on top of regen).
+    expected = after_first + w.repel_regen * w.dt * 10
+    assert w.repel_charges == pytest.approx(expected, abs=1e-6)
+
+
+def test_mashing_attract_while_stationary_pays_the_bonus_once():
+    """Releasing always drops `_latch` (see `_update_latch`), including on
+    every NEUTRAL frame of a stationary mash. The bonus must not key its
+    re-arm off that: tapping ATTRACT on and off while sitting still inside a
+    ring must pay `repel_attach_bonus` exactly once, not once per tap."""
+    node = Node(400.0, 400.0, 300.0, 5.0)
+    spawn = (300.0, 400.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=spawn)
+    w.repel_charges = 0.0
+
+    # A plausible 16 Hz mash: 10 frames held, 5 released, repeated — pinned
+    # in place each frame so the test isolates the bonus accounting from
+    # whatever the spring itself would otherwise do to the position.
+    frames = 0
+    for _cycle in range(50):
+        for _ in range(10):
+            w.step(Charge.ATTRACT)
+            w.x, w.y = spawn
+            w.vx = w.vy = 0.0
+            frames += 1
+        for _ in range(5):
+            w.step(Charge.NEUTRAL)
+            w.x, w.y = spawn
+            w.vx = w.vy = 0.0
+            frames += 1
+
+    # No more than one bonus, plus whatever passive regen ran during those
+    # frames (attract never blocks regen).
+    expected = min(w.repel_charges_max,
+                    w.repel_attach_bonus + w.repel_regen * w.dt * frames)
+    assert w.repel_charges == pytest.approx(expected, abs=1e-6)
+
+
+def test_leaving_the_ring_and_returning_pays_the_bonus_again():
+    """The fix for the mash exploit must not simply disable the bonus:
+    actually leaving the node's ring and coming back is the player doing the
+    work the bonus rewards, and must be paid again."""
+    node = Node(400.0, 400.0, 300.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.repel_charges = 0.0
+
+    w.step(Charge.ATTRACT)
+    after_first = w.repel_charges
+    assert after_first >= w.repel_attach_bonus
+
+    # Let go and leave the ring entirely (node.radius is 300.0).
+    w.x, w.y = (2000.0, 2000.0)
+    w.vx = w.vy = 0.0
+    w.step(Charge.NEUTRAL)
+
+    # Come back inside the ring and grab again.
+    w.x, w.y = (300.0, 400.0)
+    w.vx = w.vy = 0.0
+    w.step(Charge.ATTRACT)
+
+    assert w.repel_charges >= after_first + w.repel_attach_bonus - 1e-6
+
+
+def test_a_dry_press_recovers_and_can_fire_again_without_releasing():
+    """Design doc 4.1: 'The charge budget must never be the reason the
+    emergency out was unavailable at a flip.' Pin the player at a constant
+    distance from the wall and hold repel long enough to drain the tank dry,
+    then keep holding — never release — for several more seconds. Regen must
+    resume and repel must fire again on its own, or the meter has quietly
+    reintroduced the unlucky death it exists to remove."""
+    w = make_world(flip_duration=0.0, gravity=0.0)
+    ch = w.chain.current
+
+    def pinned_step():
+        # Re-pin position and zero velocity every frame: isolates whether a
+        # push fired THIS frame (nonzero velocity after the step) from any
+        # drift the previous frame's push may have caused.
+        w.x, w.y = ch.world(400.0, 380.0)
+        w.vx = w.vy = 0.0
+        w.step(Charge.REPEL)
+
+    for _ in range(3000):                        # drain the tank dry
+        pinned_step()
+    assert w.repel_charges < w.repel_min_spend, "should be stranded here"
+
+    recovered = False
+    fired_again = False
+    for _ in range(3000):                         # keep holding, never release
+        pinned_step()
+        if w.repel_charges > w.repel_min_spend:
+            recovered = True
+        if math.hypot(w.vx, w.vy) > 0.0:
+            fired_again = True
+
+    assert recovered, "the tank must recover above the floor while still held"
+    assert fired_again, "repel must fire again once the tank recovers"
 
 
 def test_reset_refills_the_tank():
