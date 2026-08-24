@@ -38,6 +38,17 @@ class TuningState:
         delta = step * direction * (FAST_MULTIPLIER if fast else 1.0)
         self.values[name] = max(low, min(high, self.values[name] + delta))
 
+    def nudge(self, name: str, direction: int, fast: bool = False) -> None:
+        """Adjust a knob by name, leaving the overlay's selection alone.
+
+        For values bound to their own keys rather than driven through the
+        cursor. Field of view is one: it is adjusted while flying, and hunting
+        eleven rows down a list mid-run is not a control.
+        """
+        _default, step, low, high = config.TUNABLES[name]
+        delta = step * direction * (FAST_MULTIPLIER if fast else 1.0)
+        self.values[name] = max(low, min(high, self.values[name] + delta))
+
     def orbital_period(self) -> float:
         """2*pi/sqrt(k_attract). Independent of orbit size under a linear
         central force, which makes it the single best predictor of feel."""
