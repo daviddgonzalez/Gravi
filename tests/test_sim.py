@@ -829,9 +829,16 @@ def test_a_wall_out_of_reach_does_nothing():
     assert lateral == pytest.approx(0.0, abs=1e-9)
 
 
-def test_a_node_in_range_wins_over_the_wall():
-    """The wall is the fallback, not an extra force stacked on node play."""
-    w = make_world(flip_duration=0.0)
+def test_a_wall_in_reach_wins_over_a_node():
+    """Walls take priority over nodes for a push (reversed 2026-08-23). A push
+    goes off the wall, and off a node only when no wall is near — so the
+    emergency out is the same gesture everywhere, since a corridor always has
+    a wall. Still exactly one of the two, never both summed."""
+    # gravity=0 so the only thing moving the player is the push. Gravity acts
+    # along the corridor, i.e. on the very axis this test uses to detect a
+    # stray node force — the previous version of this test asserted
+    # t_component > 0 and was partly measuring gravity rather than the node.
+    w = make_world(flip_duration=0.0, gravity=0.0)
     ch = w.chain.current
     here = ch.world(400.0, 380.0)
     near = ch.world(300.0, 380.0)              # 100 back along the corridor
@@ -844,26 +851,21 @@ def test_a_node_in_range_wins_over_the_wall():
     w.step(Charge.REPEL)
 
     # The node sits BEHIND the player along the corridor, so a node push moves
-    # them along +t. A wall push would move them across, along -u. Only one of
-    # those may happen.
+    # them along +t. The wall is beside them, so a wall push moves them across,
+    # along -u. Exactly one of those may happen, and now it is the wall: the
+    # player is at u = 380 with wall_reach = 260 and half_width = 460, so the
+    # wall is 80 away and well within reach.
     #
-    # Both components are checked deliberately. The along-corridor (t)
-    # component alone cannot distinguish "the node won" from "the node and
-    # the wall both fired": the node is directly behind the player here (same
-    # u = 380), so a correct node-only push has zero u component by
-    # construction, while a wall force stacked on top would add a nonzero one
-    # -- the player sits at u = 380 with wall_reach = 260 and half_width =
-    # 460, so the wall (distance 80) is well within reach and a stray push
-    # would be large and obvious. A prior version of this test asserted only
-    # t_component > 0.0, and that version kept passing even after the whole
-    # wall-fallback branch was deleted and after a "wall force stacks on top
-    # of node force" bug was injected in its place.
+    # Both components are checked deliberately. The lateral (u) component alone
+    # cannot distinguish "the wall won" from "the wall and the node both
+    # fired", because a correct wall-only push has zero t component by
+    # construction here.
     px, py = ch.perp
     t_component = w.vx * ch.direction[0] + w.vy * ch.direction[1]
     u_component = w.vx * px + w.vy * py
-    assert t_component > 0.0, "the node, not the wall, must be pushing"
-    assert u_component == pytest.approx(0.0, abs=1e-6), (
-        "a wall force must not stack on top of the node force")
+    assert u_component < 0.0, "the wall, not the node, must be pushing"
+    assert t_component == pytest.approx(0.0, abs=1e-6), (
+        "a node force must not stack on top of the wall force")
 
 
 def test_a_player_crossing_a_turn_can_save_themselves_on_a_wall():
@@ -927,65 +929,61 @@ def test_a_player_crossing_a_turn_can_save_themselves_on_a_wall():
         f"slowly (which drag alone can also achieve): {before} -> {after}")
 
 
-def test_leaving_a_nodes_ring_near_a_wall_can_snap():
-    """Pins a measured force discontinuity at the node-to-wall handoff. This
-    is NOT a bug to quietly fix -- see the wall-fallback branch in sim.py and
-    design doc section 10 -- it is a known playtest risk, and this test exists
-    so nobody "cleans up" the force law without knowing what they are
-    changing.
+def test_crossing_into_wall_reach_reverses_the_push():
+    """Pins the force discontinuity created by giving walls priority over
+    nodes (2026-08-23). This is NOT a bug to quietly fix -- it is a known
+    playtest risk, and this test exists so nobody "cleans up" the priority
+    rule without knowing what they are changing.
 
-    Node repel is k*(radius - r): zero at the ring's rim by construction.
-    Wall repel is a function of an unrelated quantity, distance to the
-    corridor wall, so nothing makes the handoff between the two continuous.
-    With the shipped constants used here (k_repel=15, force_max=4500,
-    wall_reach=260, half_width=460), a node at u=200 with radius=260 has a
-    ring edge that lands exactly on the wall. Sampling 200 generated chambers
-    (893 nodes, real make_chamber defaults) found 100% of nodes have a ring
-    edge reaching into the wall_reach band, and 21.1% reach or pass the wall
-    outright -- this is not a rare corner case.
+    Before the reversal the handoff sat at a node's rim, where node repel is
+    zero by construction, so the jump was 0 -> 3900 in magnitude only. Giving
+    walls priority moves the handoff to the wall_reach boundary, where BOTH
+    forces are live -- and they point in opposite directions, because a node
+    at the centre lane pushes you outward while the wall pushes you inward.
 
-    The player is placed a hair inside the ring (still latched: node force is
-    ~0, correctly, since they are at the rim) and then a hair outside it
-    (latch dropped, so the wall branch fires instead: a large force, because
-    the player also happens to be at the wall). The jump from ~0 to ~3900 is
-    the measured discontinuity.
+    Measured with the shipped constants (k_repel=15, wall_reach=260,
+    half_width=460, a node at u=0 with radius 300), across u=200:
+
+        u=190   wall 270 away, out of reach   node pushes OUTWARD at 1650
+        u=210   wall 250 away, in reach       wall pushes INWARD  at  150
+
+    So twenty units of drift flips the push through 180 degrees and drops it
+    to a ninth of its magnitude. Whether that reads as "the wall took over"
+    or as the controls inverting under you is a question for the playtest --
+    see design doc section 10.
     """
-    shipped_params = FieldParams(k_attract=8.0, k_repel=15.0, force_max=4500.0)
-    radius = 260.0
-    node_u = 200.0
-    half_width = 460.0            # ChamberParams default
-    wall_reach = 260.0            # make_world default
-    rim_u = node_u + radius       # 460.0 -- exactly at the wall
+    shipped = FieldParams(k_attract=8.0, k_repel=15.0, force_max=4500.0)
+    radius = 300.0
 
-    w = make_world(
-        nodes=[Node(0.0, 0.0, radius=radius, core_radius=10.0)],
-        flip_duration=0.0, gravity=0.0, wall_reach=wall_reach)
-    w.params = shipped_params
+    w = make_world(nodes=[Node(0.0, 0.0, radius=radius, core_radius=10.0)],
+                   flip_duration=0.0, gravity=0.0, wall_reach=260.0)
+    w.params = shipped
     ch = w.chain.current
-    node_x, node_y = ch.world(400.0, node_u)
+    px, py = ch.perp
+    node_x, node_y = ch.world(400.0, 0.0)
     w.chain.chambers[0] = replace(
         w.chain.chambers[0],
         nodes=(Node(node_x, node_y, radius=radius, core_radius=10.0),))
 
-    epsilon = 1e-6
-
-    # Just inside the ring: still latched, node force approx zero.
-    w.x, w.y = ch.world(400.0, rim_u - epsilon)
+    # Just outside wall reach: the node is what is left, and it pushes OUT.
+    w.x, w.y = ch.world(400.0, 190.0)
     w.vx = w.vy = 0.0
     w.step(Charge.REPEL)
-    assert w.latched_node() is not None, "must still be latched at the rim"
-    node_force = math.hypot(w.vx, w.vy) / w.dt
-    assert node_force == pytest.approx(0.0, abs=1e-2), (
-        f"node force at the rim should be ~0, got {node_force}")
+    outward = (w.vx * px + w.vy * py) / w.dt
+    assert outward == pytest.approx(1650.0, abs=1.0), (
+        f"expected the measured 1650 node push outward, got {outward}")
 
-    # Just outside the ring, at the wall: latch drops, wall takes over.
-    w.x, w.y = ch.world(400.0, rim_u + epsilon)
+    # Twenty units further out, inside wall reach: the wall wins and pushes IN.
+    w.x, w.y = ch.world(400.0, 210.0)
     w.vx = w.vy = 0.0
+    w.repel_charges = w.repel_charges_max
+    w._press_paid = None
     w.step(Charge.REPEL)
-    assert w.latched_node() is None, "must have dropped the latch past the rim"
-    wall_force = math.hypot(w.vx, w.vy) / w.dt
-    assert wall_force == pytest.approx(3900.0, abs=1.0), (
-        f"expected the measured ~3900 wall force, got {wall_force}")
+    inward = (w.vx * px + w.vy * py) / w.dt
+    assert inward == pytest.approx(-150.0, abs=1.0), (
+        f"expected the measured 150 wall push inward, got {inward}")
+
+    assert outward * inward < 0.0, "the push must have reversed direction"
 
 
 def test_a_press_in_open_space_is_free():

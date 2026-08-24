@@ -75,10 +75,31 @@ would push equally and cancel, which would delete the force precisely in the
 middle of the corridor. Ties break to one side deterministically, because the
 validator has to reproduce it.
 
-**A node in range always wins; the wall is the fallback.** This aims the feature
-squarely at the no-verb moment and leaves node play untouched. It also means the
-rule is easy to state to a player: *the wall is what you have when you have
-nothing else.*
+**~~A node in range always wins; the wall is the fallback.~~ Reversed
+2026-08-23 — the WALL takes priority.** The author's call after playing it: a
+push goes off the wall, and off a node only when no wall is in reach. The rule
+is still one sentence, and the emergency out is now the same gesture everywhere,
+since a corridor always has a wall.
+
+Two consequences, both real:
+
+1. **Node-repel becomes the rarer case.** At `wall_reach` 260 against a
+   half-width of 460, walls win across the outer 260 units on each side, so a
+   node push survives only in the middle ~400 of the corridor.
+2. **The discontinuity moved, and got sharper.** It used to sit at a node's
+   rim, where node repel is zero by construction, so the jump was `0 -> 3900`
+   in magnitude alone. It now sits at the wall-reach boundary, where *both*
+   forces are live and they point in **opposite directions** — a node near the
+   centre lane pushes you outward, the wall pushes you inward. Measured with
+   shipped constants, a node at `u = 0` with radius 300:
+
+   | position | wall distance | what fires | force |
+   |---|---|---|---|
+   | `u = 190` | 270, out of reach | node | **outward** at 1650 |
+   | `u = 210` | 250, in reach | wall | **inward** at 150 |
+
+   Twenty units of drift flips the push through 180° and drops it to a ninth
+   of its magnitude. Pinned by `test_crossing_into_wall_reach_reverses_the_push`.
 
 **No latch.** A node repel latches and breaks on leaving the ring. A wall is
 continuous — there is nothing to hold on to and nothing to break — so the wall
@@ -247,6 +268,11 @@ Nothing here touches attract, the rigid rope, gravity, or the camera.
   optimal play "tap at exactly the floor, repeatedly"?
 - Does repel costing charge make the player hoard it and die holding a full
   meter — the opposite failure to the one this fixes?
+- Now that walls take priority (2026-08-23): does crossing the wall-reach
+  boundary read as "the wall took over", or as the controls inverting under
+  you? The push reverses direction and drops to a ninth of its magnitude over
+  twenty units of drift, and unlike the old node-rim handoff both sides of it
+  are live forces.
 - Node repel fades to zero at the ring's rim by design, but wall repel is a
   function of an unrelated quantity (distance to the corridor wall), so
   nothing makes the handoff between them continuous. With the shipped

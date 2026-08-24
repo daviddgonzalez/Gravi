@@ -267,17 +267,20 @@ class World:
         # Mass is fixed at 1.0, so force == acceleration.
         ax = gx * self.gravity
         ay = gy * self.gravity
-        if node is not None and not rigid:
-            # Only attract is allowed to act past the rim; a latched repel is
-            # inside its ring by construction, so the cutoff is a no-op there
-            # and left in place as a guard rather than an exception.
-            fx, fy = charge_force(self.x, self.y, node, charge, self.params,
-                                  ignore_radius=charge is Charge.ATTRACT)
-        elif node is None and charge is Charge.REPEL:
-            # No node in reach, so the wall is what is left. It is a FALLBACK,
-            # never an extra force stacked on node play: a node in range always
-            # wins the branch above. The rule a player can hold in their head is
-            # "the wall is what you have when you have nothing else".
+        fx = fy = 0.0
+        if charge is Charge.REPEL:
+            # WALLS TAKE PRIORITY over nodes for a push. Reversed on 2026-08-23
+            # by the author; the wall was the fallback until then. The rule a
+            # player holds in their head is now "a push goes off the wall, and
+            # only off a node when no wall is near" — which makes the emergency
+            # out the same gesture everywhere, since a corridor always has a
+            # wall. Consequence worth knowing: at wall_reach 260 against a
+            # half_width of 460, walls win across the outer 260 units on each
+            # side, so node-repel survives only in the middle ~400 of the
+            # corridor and is now the rarer case.
+            #
+            # Still exactly one of the two, never both summed: whichever this
+            # resolves to is the only push applied this step.
             #
             # This branch and the rigid rope are mutually exclusive by charge
             # value alone: rigid requires Charge.ATTRACT (see `rigid` above),
@@ -320,8 +323,18 @@ class World:
             distance, normal = self.chain.current.nearest_wall(self.x, self.y)
             fx, fy = surface_force(distance, normal, self.params,
                                    self.wall_reach)
-        else:
-            fx = fy = 0.0
+            if fx == 0.0 and fy == 0.0 and node is not None:
+                # Out of the wall's reach, so the node is what is left. The
+                # latch bookkeeping in _update_latch is unchanged either way:
+                # a repel latch still forms and still breaks at the rim, it
+                # simply may not be the thing pushing while a wall is nearer.
+                fx, fy = charge_force(self.x, self.y, node, charge,
+                                      self.params, ignore_radius=False)
+        elif node is not None and not rigid:
+            # Attract. It is allowed to act past the rim, because its rope
+            # holds after the player stretches outside the ring.
+            fx, fy = charge_force(self.x, self.y, node, charge, self.params,
+                                  ignore_radius=True)
 
         pushing = False
         if charge is Charge.REPEL and (fx != 0.0 or fy != 0.0):
