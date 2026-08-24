@@ -25,27 +25,57 @@ the module boundary between S6 and S7.
 difficulty. That needs real play data and is S11's job (core spec §4.4 says so).
 This spec leaves the hook and names it (§4.6).
 
-### 1.1 One constraint arrived during this session
+### 1.1 The binding constraint: flip rate is not a difficulty axis
 
-**Flip rate is not a difficulty axis.** The author's direction, 2026-08-17:
-difficulty must come from somewhere other than gravity flips until the motion
-sickness problem of core spec §3.3 has an answer. Three consequences bind
-everything below:
+This is the single most important thing this spec is built around, and it is
+not this spec's to decide. It was settled by the author during S1, after playing
+the prototype, and is recorded as **amendment A1** in core spec §3.6 and slice 2
+§2. The rotation is nauseating; turning that dial up is not allowed to be how
+the game gets harder. This section restates A1 so that nothing below can be read
+without it, and adds what it means for generation specifically.
 
-1. Chamber **depth is a global constant, not a sampled knob** (§3.2). Depth is
-   the flip-frequency knob — slice 2 measured 1150 at ~26 swaps/min, which
-   playtested as unreadable, and 1600 at ~8. Sampling it per chamber would make
-   the flip rhythm a generated quantity, which is the opposite of the intent.
-2. Flip frequency is **excluded from the escalation knob set** (§3.3). None of
-   the knobs that drive the difficulty curve changes how often gravity turns.
-3. Core spec §3.6's 50+ band lists **"timed auto-flips"**, whose entire
-   mechanism is raising flip frequency. It is flagged here as suspect and
-   **gated behind the §3.3 accessibility work** rather than shipped as a
-   difficulty axis. See §9.
+**A1, as it binds this spec:**
 
-The remaining knobs from §3.6 — spacing, charged surfaces, hazard density, node
+1. **Flip rate is one constant, chosen once for comfort.** Not sampled per
+   chamber, not ramped by chamber index, and not an input to any difficulty
+   score. In A1's own words: *"S2's parameter box and difficulty record must not
+   contain it; S6 must not vary it per archetype; S11 must not tune it as an
+   escalation curve."* Two constants set it, both already shipped and both to be
+   left alone — chamber `depth` (1600, ~8 swaps/min; the prototype's 1150 gave
+   ~26 and playtested as unreadable) and the turn cadence `turn_gap_min=3`,
+   `turn_gap_max=7`, which lets ~81% of chambers run straight through.
+2. **Timed auto-flips are struck** from core spec §3.6's 50+ band. That row is
+   gone, not deferred. Escalation comes from what the terrain *means* — spacing,
+   hazards, depletion, dead zones, required exit vectors — not from spinning the
+   screen more often. §9's open question is only whether anything replaces the
+   row, never whether the mechanic returns.
+3. **The game opens with the fixed camera.** This does not constrain generation
+   directly, but it constrains *measurement*: the difficulty a box is stamped
+   with must be the difficulty of playing it in the default camera, so tier-1
+   and tier-2 rollouts are camera-independent by construction (§5.1). No box may
+   be harder or easier depending on which camera is on.
+
+**Where the difficulty goes instead.** A1 removes an axis, so the remaining ones
+have to carry more. The knob table in §3.2 exists to make that concrete, and
+since slice 2 shipped, one knob got considerably more powerful than it looks:
+
+> **`half_width` is now the wall-support knob.** Corridor walls are repel-able
+> charged surfaces with `wall_reach` 260. At `half_width` 380 the two wall bands
+> nearly meet and there is always something to push off. At 700 there is an 880-
+> wide band down the middle with no wall support at all, where the player is on
+> nodes alone. That is a genuine, continuous difficulty axis that never touches
+> the camera — exactly the kind of thing A1 asks escalation to be made of.
+
+The rest of §3.6's list — spacing, charged surfaces, hazard density, node
 lifetime, dead zones, moving nodes, branching, exit tolerance, overlapping
-fields — are more than enough to carry the curve without it.
+fields — is more than enough to carry the curve without flips.
+
+**A note on physics tunables.** `repel_charges_max`, `repel_charge_seconds`,
+`repel_regen`, `wall_reach` and the rest of the 2026-08-22 budget are *global
+physics*, not terrain. They are frozen by the stamp (§5.5) and may not be
+sampled per box: changing one invalidates every measurement in the library. The
+terrain-side expression of the same pressure — how much there is to push off,
+and where — is what `half_width`, `node_lifetime` and `dead_zone_frac` are for.
 
 ---
 
@@ -111,60 +141,102 @@ its own knobs at runtime could not be swept.
 tightness both scale badly with dimension count (§3.4), so each archetype spends
 six dimensions deliberately and pins the rest.
 
-### 2.3 The entry contract: every chamber is entered downward
+### 2.3 The entry contract: two kinds of seam
 
 Core spec §4.3 pictures the runtime asking for *"a chamber measured at difficulty
-0.62 that accepts a downward entry"*. Half of that question answers itself. Saying
-why, plainly, deletes a whole category of bookkeeping before anyone writes it.
+0.62 that accepts a downward entry"*. The direction half of that question answers
+itself, and saying why deletes a whole category of bookkeeping before anyone
+writes it. But the *offset* half turns out to have two answers, not one, and an
+earlier draft of this section got that wrong — worth stating carefully, because
+the schema in §3.1 depends on it.
 
 **Chambers are built in their own frame, not the world's.** Every chamber carries
-its own axes: origin at the centre of its entrance, `+d` pointing into the chamber
-the way gravity pulls, `+perp(d)` running across it. The generator works only in
-these local axes. It never knows — and never needs to know — which way the chamber
-will end up facing in the world.
+its own axes: origin at the centre of its entrance, `+d` pointing into the
+chamber the way gravity pulls, `+perp(d)` running across it. The generator works
+only in these local axes. It never knows — and never needs to know — which way
+the chamber faces in the world. So in local coordinates every chamber is entered
+travelling along `+d`, always. No archetype can be direction-specific, and none
+declares a direction. That much of §4.3 is free.
 
-**In that frame, entry is always identical.** Slice 2 §4.3 derives it: a 90° turn
-swaps the two axes, so the old across-axis becomes the new down-axis. Concretely,
-you cross an arrow at some sideways offset `u`; the next chamber's down-axis is
-the axis you were just moving across, so that same `u` becomes your **depth** in
-the new chamber, and your sideways offset there works out to exactly **zero**. You
-always begin on the centre line, always travelling along `+d`. There is no second
-way in.
+**Where you enter depends on whether gravity turned.** Since amendment A1 (§1.1),
+gravity turns only every `turn_gap_min..turn_gap_max` chambers — measured at
+**19% turning, 81% straight** over 200 seeds. The two seams behave differently,
+and both are live:
 
-So "accepts a downward entry" describes every chamber that will ever exist. No
-archetype can be direction-specific, and none declares a direction.
+| Seam | Frequency | Entry depth | Entry offset |
+|---|---|---|---|
+| **Turning** (`turn = ±1`) | ~19% | `±u` | `0` |
+| **Straight** (`turn = 0`) | ~81% | `0` | `u` |
 
-#### What actually varies
+where `u` is the lateral offset at which the player crossed the previous arrow.
 
-Two quantities, and they are what an archetype does declare — its **entry
-envelope**:
+On a **turning** seam the axes swap: the direction you were drifting across
+becomes the direction you now fall, so your crossing offset becomes your *depth*
+and your offset resets to exactly zero. Cross wide at +300 and you begin 300 px
+in, skipping the chamber's opening stretch of node field; cross short at −200 and
+you begin 200 px *behind* the entrance line, with extra falling to do before the
+content starts.
 
-- **entry depth** — how far into the chamber you start. It is the arrow offset you
-  just crossed at, so its range is set by the **previous** chamber's half-width,
-  not this one's. At half-width 460 that spans −460 to +460. Cross wide at +300
-  and you begin 300 px in, skipping the chamber's first stretch of node field.
-  Cross short at −200 and you begin 200 px *behind* the entrance line, with that
-  much extra falling to do before the chamber's content even starts.
-- **entry speed** — the magnitude of the velocity you carry through the arrow.
+On a **straight** seam the axes do not swap. The next entrance is placed at the
+previous chamber's exit *centre*, so depth resets to zero and your crossing
+offset carries straight through as offset. You arrive at the top of the chamber,
+but off to one side.
 
-Entry depth is the only field in the schema that couples two chambers together.
-That is what makes it the one value a lookup must test against the player's live
-state instead of assuming, and why the envelope belongs to the archetype rather
-than being a global constant.
+Both are verified against the shipped `chamber.py`, not derived on paper.
+
+> **This corrects slice 2 §4.3 and the `chamber.py` module docstring**, both of
+> which state that lateral offset is *always* zero. That was true when every
+> arrow turned. It has not been true since the turn cadence landed. The claim
+> holds for turning seams only. Flagged for S6 in §6.4 — this spec does not edit
+> either file.
+
+**The corollary each seam needs is different, and both already hold.** A turning
+entry puts the player on the centre line at a depth up to `±half_width`, which is
+well past `entry_clear` and therefore *inside* the node field — safe only because
+`lane_clear` keeps cores off the centre lane. A straight entry puts the player at
+depth zero but at an arbitrary offset — safe only because `entry_clear` keeps
+nodes away from the entrance line across the full width. Neither guarantee covers
+the other case. Both must survive any archetype this spec defines, and §5.1 makes
+that a tier-1 rejection rather than a hope.
+
+#### What an archetype declares
+
+Its **entry envelope** — now three ranges, not two:
+
+- **entry depth** — bounded by the previous chamber's `half_width` on a turning
+  seam, exactly zero on a straight one.
+- **entry offset** — exactly zero on a turning seam, bounded by the previous
+  chamber's `half_width` on a straight one.
+- **entry speed** — the magnitude of the velocity carried through the arrow.
+
+Depth and offset are both coupled to the *previous* chamber, which is what makes
+them the fields a lookup must test against the player's live state rather than
+assume, and why the envelope belongs to the archetype instead of being a global
+constant.
 
 #### What the runtime asks instead
 
 The query is `(target difficulty, entry state, exits wanted)`, and "accepts a
 downward entry" resolves to one concrete test: *does this box's entry envelope
-contain the player's current `(depth, speed)`?* Same question core spec §4.3
-wanted to ask, with the half that answers itself replaced by the half that carries
-information. This is a refinement of §4.3's phrasing, not a contradiction of it.
+contain the player's current `(depth, offset, speed)`?* Same question core spec
+§4.3 wanted to ask, with the half that answers itself replaced by the halves that
+carry information.
+
+**A box that only handles one seam type is legal** — it declares a degenerate
+range on the other — but the library must hold enough of both that a lookup at
+any difficulty can be answered either way. §5.6's budget splits sampling
+accordingly.
 
 ### 2.4 The exit contract, and branching geometry
 
 A single-exit archetype declares one arrow spanning the far side, with a `turn`
-of ±1 quarter turns (slice 2 §4.2: the arrow *sets* gravity, it does not rotate
-it, so crossing is idempotent).
+of `+1`, `-1`, or **`0`** (slice 2 §4.2: the arrow *sets* gravity, it does not
+rotate it, so crossing is idempotent). `0` is the common case since the turn
+cadence landed — ~81% of arrows pass gravity straight through (§2.3). An
+archetype does not choose its own turn: the cadence is a property of the run,
+walked from the seed by `turn_schedule()` so the corridor is reproducible, and
+per amendment A1 (§1.1) it is a comfort constant rather than anything an
+archetype or a difficulty curve gets to set.
 
 **Two exits tile the far side; they do not sit somewhere in it.** S6's charter
 correctly flags that slice 2 §4.3's offset-zero derivation assumes one exit.
@@ -174,9 +246,11 @@ Both arrows lie on the far side, abutting at normalised offset
 `branch_split ∈ [-0.6, 0.6]` (in units of half-width). Together they span the
 full width, so slice 2's guarantee survives intact — you cross one nearly every
 time, and crossing outside *both* means you left sideways, which is still death
-and still a real mistake rather than a missed target. The offset-zero derivation
-is per-arrow and therefore unchanged: crossing at offset `u` through either
-arrow still yields entry depth `±u` and lateral offset zero in the next chamber.
+and still a real mistake rather than a missed target. The entry derivation is
+per-arrow and therefore unchanged by branching: crossing at offset `u` through
+either arrow yields whichever entry state §2.3's table gives for that arrow's
+turn — `(depth ±u, offset 0)` if it turns, `(depth 0, offset u)` if it does not.
+Branching multiplies the exits, not the seam types.
 
 Consequences worth naming:
 
@@ -237,12 +311,32 @@ class EntryEnvelope:
     coordinates where the entry vector is always +depth (spec 2.3), so no
     archetype is direction-specific. What varies is where along the entrance
     the player arrives and how fast.
+
+    Both depth and offset are needed because there are two kinds of seam
+    (spec 2.3): a turning seam delivers the player at offset zero and some
+    depth, a straight seam at depth zero and some offset. A box that serves
+    only one declares a degenerate range on the other -- lo == hi == 0.0.
     """
 
     depth_lo: float       # px along +depth; negative means behind the entrance
     depth_hi: float
+    offset_lo: float      # px along +perp(depth); zero on a turning seam
+    offset_hi: float
     speed_lo: float       # px/s, magnitude of entry velocity
     speed_hi: float
+
+    @property
+    def seam(self) -> str:
+        """Which seam types this box was measured under: "turning",
+        "straight", or "both". Derived, never stored, so it cannot drift from the
+        ranges it describes."""
+        flat_offset = self.offset_lo == self.offset_hi == 0.0
+        flat_depth = self.depth_lo == self.depth_hi == 0.0
+        if flat_offset and not flat_depth:
+            return "turning"
+        if flat_depth and not flat_offset:
+            return "straight"
+        return "both"
 
 
 @dataclass(frozen=True)
@@ -637,6 +731,15 @@ early exit once `ROUTE_TARGET = 12` successes are found at a point — enough to
 count distinct routes without paying for the rest. Each rollout is capped at
 `MAX_SIM_SECONDS = 12` of game time.
 
+**Entry sampling, and why it is not optional.** Each rollout draws its start
+state from the box's `EntryEnvelope` (§3.1), *including the seam type*. A sweep
+that always starts at offset zero measures only the ~19% of seams that turn
+(§2.3) and silently certifies the other 81% it never tried. Where a box's
+envelope covers both, rollouts are split between them in proportion to the
+shipped cadence, so the measurement matches the corridor a player actually gets.
+The entry state is drawn from the same seeded stream as everything else (§5.7),
+so it survives `-j 14`.
+
 **What counts as a route.** A rollout succeeds iff the player crosses an exit
 arrow inside its accepted span while alive. Leaving sideways, hitting a core or
 a hazard, and exceeding the time cap are all failures.
@@ -719,6 +822,20 @@ stamp = sha256(canonical_json({
     "constants": {
         "k_attract", "k_repel", "force_max", "gravity",
         "speed_max", "fall_speed_max", "player_radius", "PHYS_DT",
+        # The 2026-08-22 repel budget. A chamber cleared with three charges
+        # is not the same chamber with one, so a library baked under one
+        # budget is invalid under another.
+        "wall_reach", "repel_charges_max", "repel_charge_seconds",
+        "repel_min_spend", "repel_regen", "repel_attach_bonus",
+        # depth and the turn cadence ARE in the key. Amendment A1 makes them
+        # comfort constants rather than difficulty knobs, which stops them
+        # being sampled -- it does not stop a change to them invalidating
+        # every measurement taken under the old value. A 1400-deep chamber is
+        # a different chamber. They reach the key by two routes (the
+        # ChamberParams defaults live in chamber.py, whose bytes are hashed
+        # above) and are named here so an override at bake time cannot slip
+        # past the source hash.
+        "depth", "turn_gap_min", "turn_gap_max",
     },   # values as used for the bake
 }))[:16]
 ```
@@ -847,20 +964,42 @@ one.
 
 ### 6.4 What this spec asks of other sessions
 
-- **S1** — needs to hear §1.1 directly; it is the only session running in
-  parallel that this affects. Chamber depth stays a global constant and should
-  default to the readable value (1600, ~8 swaps/min, not the prototype's 1150 at
-  ~26). Flip duration and the fixed-camera option are judged on readability, not
-  on making flips a challenge.
-- **S1 → S6 handoff** — `field.py` gains `Surface` and `surface_force()` for
-  §2.1's surface-run archetype. S6 needs it; S1 owns `field.py` through slice 2.
-  The edit lands **after** S1 merges, by S6, and it must be the same force law
-  applied to a segment rather than a second law (core spec §8.1).
+Two items that stood here when this spec was first written are now **discharged**
+by the slice 2 merge, and are recorded as closed rather than deleted so nobody
+re-opens them: S1 no longer needs to be told §1.1 (amendment A1 landed during
+S1's own implementation, and `depth = 1600.0` shipped), and `field.py` already
+has `surface_force()`. What remains:
+
+- **S6 — two documents state a fact that is no longer true.** Slice 2 §4.3 and
+  the `chamber.py` module docstring both say entry lateral offset is *always*
+  zero. That held when every arrow turned; since the turn cadence landed it is
+  true only of the ~19% of seams that turn (§2.3, measured). This spec does not
+  edit either file. S6 owns the correction, and it is a doc fix, not a code fix —
+  the shipped behaviour is right, only its description is stale.
+- **S6 — `surface_force()` exists but there is no `Surface` entity.** The
+  signature is `surface_force(distance, normal, params, reach)` and its only
+  caller is the corridor wall via `Chamber.nearest_wall`. §2.1's surface-run
+  archetype needs *placeable* charged segments, which is a generation-side
+  entity, not a second force law (core spec §8.1). It stays S6's, and it must
+  call the existing `surface_force()` unchanged.
+- **S6 — the entry envelope is three ranges now, not two.** Any archetype
+  authored against the old two-field `EntryEnvelope` needs `offset_lo`/
+  `offset_hi`, and must declare which seam types it was measured under.
+- **S7 — the validator must sample both seam types.** A sweep that only ever
+  enters at offset zero measures 19% of the game. §5.1's entry sampling draws
+  from the envelope, and §5.6's budget splits accordingly.
+- **S7 — the physics stamp must cover the repel budget.** `wall_reach`,
+  `repel_charges_max`, `repel_charge_seconds`, `repel_min_spend`, `repel_regen`
+  and `repel_attach_bonus` all change how hard a chamber is to clear, so a
+  library baked under one set is invalid under another (§5.5). They were not in
+  the tunable list when §5.5 was written.
 - **S5** — the difficulty schema it is blocked on is §3.1 and §4.2. Note that
   the scalar is computed, not stored, so rival matching reads
   `library.score(box, header)` rather than reading a field.
 - **S11** — the calibration hook is §4.6 and the deep-only boxes of §5.4 are the
-  probe. Neither requires a re-bake.
+  probe. Neither requires a re-bake. Per A1, S11 must not tune flip rate as an
+  escalation curve; `half_width` and the wall-support band (§1.1) are the axis to
+  reach for instead.
 
 ---
 
@@ -892,6 +1031,11 @@ one.
 | Sweep determinism | Per-rollout seed from `(run_seed, box_id, point, index)` | `-j 1` and `-j 14` must produce identical libraries |
 | Selection policy | Difficulty-matched, texture-repelled, recency window 4 | The structural answer to boredom, as an algorithm |
 | Schema ownership | `chambers/box.py`, `chambers/knobs.py` written by S7, imported by both | S7 is unblocked first; the runtime must not import the validator |
+| Flip rate | Not a knob, not a score input, not an escalation axis (amendment A1) | Author's call during S1: the rotation is nauseating; the dial is a comfort constant |
+| Seam types | Two — turning (~19%, offset 0) and straight (~81%, depth 0) | Measured over 200 seeds against the shipped `chamber.py`, not derived |
+| Entry envelope | Three ranges: depth, offset, speed; `seam` derived not stored | A two-range envelope silently describes only the 19% that turn |
+| Repel budget | Global frozen physics, in the stamp; never a per-box knob | Sampling it would invalidate every measurement baked beside it |
+| The escalation axis A1 leaves | `half_width` against `wall_reach` 260 — the unsupported centre band | Scales continuously, never touches the camera |
 
 ---
 
@@ -953,11 +1097,13 @@ failure (core spec §1) in its generator-shaped form.
 
 ## 9. Open questions
 
-- **`timed auto-flips` in core spec §3.6's 50+ band.** Its mechanism is raising
-  flip frequency, which §1.1 removes from the difficulty knobs. It is not in
-  `KNOBS`. Either it is cut from the escalation table, or it returns once §3.3's
-  motion-sickness question has an answer. **Needs a decision before S11 tunes
-  the endgame**, not before S6 starts.
+- **What replaces core spec §3.6's 50+ row.** The row itself is settled, not
+  open: amendment A1 struck `timed auto-flips` outright, and this spec does not
+  reopen it. What is open is whether the 50+ band needs a *replacement* mechanic
+  or simply inherits harder values of the knobs below it. The `half_width`
+  wall-support band (§1.1) is the strongest candidate, because it scales
+  without touching the camera. **Needs a decision before S11 tunes the
+  endgame**, not before S6 starts.
 - **Calibration.** Core spec §12 already lists it; §4.6 here is the hook, not
   the answer. S11, with real play data.
 - **`AGENT_GATE = 0.15`.** Set by judgement, not measurement. The first real
