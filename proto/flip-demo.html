@@ -1,0 +1,835 @@
+<title>Gravi Flip Prototype</title>
+<style>
+  :root {
+    --ground:      #05060b;
+    --panel:       #0b0f17;
+    --panel-hi:    #121926;
+    --edge:        #1b2532;
+    --edge-hi:     #2b3a4d;
+    --ink:         #c8dceb;
+    --ink-dim:     #6f8296;
+    --ink-faint:   #46566a;
+    --node:        #50f0ff;
+    --player:      #fff078;
+    --repel:       #ff78c8;
+    --arrow:       #a97bff;
+    --bad:         #ff6e6e;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+
+  /* Single committed theme: this is an instrument reading of a near-black
+     neon game. A light variant would misrepresent the subject, so every
+     colour is painted explicitly and nothing is inherited from the host. */
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1160px;
+    margin: 0 auto;
+    padding: 28px 20px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 6px; }
+
+  h1 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+  }
+
+  .sub {
+    margin: 0;
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+    max-width: 66ch;
+  }
+
+  .eyebrow {
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+  }
+
+  /* --- stage --- */
+
+  .stage {
+    position: relative;
+    background: #000;
+    border: 1px solid var(--edge);
+    border-radius: 3px;
+    overflow: hidden;
+    line-height: 0;
+  }
+
+  canvas { display: block; width: 100%; height: auto; touch-action: none; }
+
+  .clipwarn {
+    position: absolute;
+    left: 50%;
+    bottom: 12px;
+    transform: translateX(-50%);
+    padding: 5px 11px;
+    background: rgba(255, 110, 110, 0.14);
+    border: 1px solid rgba(255, 110, 110, 0.5);
+    border-radius: 2px;
+    color: var(--bad);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    line-height: 1.4;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 120ms linear;
+    pointer-events: none;
+  }
+  .clipwarn.on { opacity: 1; }
+
+  /* --- controls --- */
+
+  .rail {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 1px;
+    background: var(--edge);
+    border: 1px solid var(--edge);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .cell {
+    background: var(--panel);
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    min-width: 0;
+  }
+
+  .seg { display: flex; gap: 1px; background: var(--edge); border-radius: 2px; overflow: hidden; }
+
+  .seg button {
+    flex: 1;
+    appearance: none;
+    border: 0;
+    background: var(--panel-hi);
+    color: var(--ink-dim);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    padding: 7px 4px;
+    cursor: pointer;
+    transition: background 100ms linear, color 100ms linear;
+  }
+  .seg button:hover { color: var(--ink); background: var(--edge-hi); }
+  .seg button[aria-pressed="true"] { background: var(--node); color: #04222a; font-weight: 600; }
+  .seg button:focus-visible { outline: 2px solid var(--player); outline-offset: -2px; }
+
+  .act {
+    appearance: none;
+    border: 1px solid var(--edge-hi);
+    background: var(--panel-hi);
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.03em;
+    padding: 7px 10px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: background 100ms linear, border-color 100ms linear;
+  }
+  .act:hover { background: var(--edge-hi); border-color: var(--ink-faint); }
+  .act:focus-visible { outline: 2px solid var(--player); outline-offset: 1px; }
+
+  input[type="range"] {
+    width: 100%;
+    accent-color: var(--node);
+    cursor: pointer;
+    margin: 0;
+  }
+  input[type="range"]:focus-visible { outline: 2px solid var(--player); outline-offset: 3px; }
+
+  .val { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  /* --- telemetry --- */
+
+  .tele {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 1px;
+    background: var(--edge);
+    border: 1px solid var(--edge);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .tele div { background: var(--panel); padding: 10px 12px; display: flex; flex-direction: column; gap: 3px; }
+  .tele .n { font-size: 17px; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .tele .n.warn { color: var(--bad); }
+
+  /* --- criteria --- */
+
+  .crit { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+
+  .crit article {
+    border-left: 2px solid var(--edge-hi);
+    padding-left: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .crit h2 { margin: 0; font-size: 12px; font-weight: 600; letter-spacing: 0.02em; color: var(--ink); }
+  .crit p { margin: 0; font-family: var(--sans); font-size: 13px; line-height: 1.5; color: var(--ink-dim); }
+
+  .keys { color: var(--ink-faint); font-size: 11.5px; letter-spacing: 0.02em; }
+  kbd {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--panel-hi);
+    border: 1px solid var(--edge-hi);
+    border-bottom-width: 2px;
+    border-radius: 2px;
+    padding: 1px 5px;
+    color: var(--ink);
+  }
+
+  .note {
+    font-family: var(--sans);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--ink-dim);
+    max-width: 72ch;
+    margin: 0;
+  }
+  .note strong { color: var(--ink); font-weight: 600; }
+
+  hr { border: 0; border-top: 1px solid var(--edge); margin: 4px 0; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition-duration: 0ms !important; }
+  }
+</style>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Gravi · slice 2 · design prototype</span>
+    <h1>Does the flip read, and what shape should the arena be?</h1>
+    <p class="sub">
+      Real force law, real integrator, the slice&nbsp;1 tuned values. Cross a violet
+      arrow and gravity becomes its direction; the world turns so gravity stays
+      screen&#8209;down. Switch the arena between circle and square and watch what
+      happens to the corners mid&#8209;turn.
+    </p>
+  </header>
+
+  <div class="stage">
+    <canvas id="c" width="1280" height="720" aria-label="Gravi flip prototype playfield"></canvas>
+    <div class="clipwarn" id="clipwarn">arena corners are outside the viewport</div>
+  </div>
+
+  <div class="rail">
+    <div class="cell">
+      <span class="eyebrow">Arena</span>
+      <div class="seg" role="group" aria-label="Arena shape">
+        <button type="button" id="shapeCircle" aria-pressed="true">Circle</button>
+        <button type="button" id="shapeSquare" aria-pressed="false">Square</button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <span class="eyebrow">Camera</span>
+      <div class="seg" role="group" aria-label="Camera mode">
+        <button type="button" id="camRot" aria-pressed="true">Rotating</button>
+        <button type="button" id="camFix" aria-pressed="false">Fixed</button>
+      </div>
+    </div>
+
+    <div class="cell">
+      <span class="eyebrow">Flip ease · <span class="val" id="easeVal">200 ms</span></span>
+      <input type="range" id="ease" min="0" max="500" step="10" value="200" aria-label="Flip ease duration in milliseconds">
+    </div>
+
+    <div class="cell">
+      <span class="eyebrow">Comfort test</span>
+      <button type="button" class="act" id="flipNow">Flip now &nbsp;<kbd>F</kbd></button>
+    </div>
+
+    <div class="cell">
+      <span class="eyebrow">Run</span>
+      <button type="button" class="act" id="reset">Restart &nbsp;<kbd>R</kbd></button>
+    </div>
+  </div>
+
+  <p class="keys">
+    <kbd>J</kbd> or <kbd>left&nbsp;mouse</kbd> attract &nbsp;·&nbsp;
+    <kbd>K</kbd> or <kbd>right&nbsp;mouse</kbd> repel &nbsp;·&nbsp;
+    <kbd>F</kbd> flip &nbsp;·&nbsp; <kbd>R</kbd> restart
+  </p>
+
+  <div class="tele">
+    <div><span class="eyebrow">fps</span><span class="n" id="tFps">—</span></div>
+    <div><span class="eyebrow">gravity</span><span class="n" id="tGrav">▼</span></div>
+    <div><span class="eyebrow">flips</span><span class="n" id="tFlips">0</span></div>
+    <div><span class="eyebrow">flips / min</span><span class="n" id="tRate">0</span></div>
+    <div><span class="eyebrow">deaths</span><span class="n" id="tDeaths">0</span></div>
+    <div><span class="eyebrow">alive</span><span class="n" id="tAlive">0.0s</span></div>
+  </div>
+
+  <hr>
+
+  <div class="crit">
+    <article>
+      <h2>1 · No re-orientation beat</h2>
+      <p>After a flip, can you read your arc and commit to the next grab immediately — or is there a beat of “wait, where am I”?</p>
+    </article>
+    <article>
+      <h2>2 · Comfortable at rate</h2>
+      <p>Hold <kbd>F</kbd> down and flip as fast as it will go for a minute. Try the ease at 0&nbsp;ms and at 500&nbsp;ms. Where does it stop being okay?</p>
+    </article>
+    <article>
+      <h2>3 · Misses feel like yours</h2>
+      <p>When you sail past an arrow into the boundary, do you know why you missed — or did it feel arbitrary?</p>
+    </article>
+  </div>
+
+  <p class="note">
+    <strong>The square’s problem, to see for yourself:</strong> a 720&nbsp;px square rotated
+    45° needs 1018&nbsp;px of height and the viewport has 720. Switch to Square, flip, and
+    watch the corners leave the screen — anything in them, including you, is invisible
+    for the length of the ease. The circle has no such angle.
+  </p>
+  <p class="note">
+    <strong>What this is not:</strong> a throwaway prototype in JavaScript, built to settle
+    the room-shape question before the real work starts. The physics is a faithful port —
+    semi-implicit Euler at 240&nbsp;Hz, <em>F = k·r</em>, your tuned values — but the
+    real slice 2 is Python, and none of this code ships.
+  </p>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------------------------------------------------------------- constants
+  // Ported verbatim from src/gravi/config.py (slice 1 playtest values).
+  const DT            = 1 / 240;
+  const MAX_STEPS     = 12;
+  const K_ATTRACT     = 15.0;
+  const K_REPEL       = 15.0;
+  const FORCE_MAX     = 4500.0;
+  const GRAVITY       = 500.0;
+  const SPEED_MAX     = 600.0;   // perpendicular to gravity ("carry")
+  const FALL_MAX      = 600.0;   // along gravity
+  const PLAYER_RADIUS = 7.0;
+  const TRAIL_EVERY   = 4;
+  const TRAIL_MAX     = 225;
+  const RESPAWN       = 0.6;
+
+  const W = 1280, H = 720;
+  const CX = W / 2, CY = H / 2;
+  const ARENA = 360;             // circle radius, or square half-side
+  const OUT_MARGIN = 120;        // grace past the boundary before death
+
+  const HALF_PI = Math.PI / 2;
+
+  // Node field. Deliberately asymmetric: a rotationally symmetric layout
+  // would look identical after a quarter turn, which would hide exactly the
+  // disorientation criterion 1 is trying to measure.
+  // Influence rings deliberately reach PAST the arrow ring. An earlier layout
+  // held them inside a 280 px envelope so arrows would sit on a clear "far
+  // side" (spec 3.1) — which meant arriving at an arrow left you with nothing
+  // in reach and no way to recover. Coverage at the arrow beats tidiness.
+  const NODES = [
+    { x: -110, y: -70,  r: 200, core: 15 },
+    { x:   45, y: -130, r: 185, core: 13 },
+    { x:  140, y:   30, r: 200, core: 16 },
+    { x:  -30, y:  160, r: 185, core: 13 },
+    { x: -145, y:  120, r: 165, core: 12 },
+  ].map(n => ({ x: CX + n.x, y: CY + n.y, r: n.r, core: n.core }));
+
+  // Four arrows just inside the rim. Each SETS gravity to its own direction
+  // (idempotent), and each points a quarter turn on from the rim it sits on,
+  // so crossing them in sequence circulates the arena forever.
+  // Bar spans the FULL chord at its radius, so there is no gap at its ends to
+  // slip through by accident: a miss is a miss you can see. Pulling the radius
+  // in from 0.85R to 0.75R widens the bar from 380 px to 476 px — the chord
+  // grows as you move toward the centre, so "closer in" and "bigger target"
+  // are the same knob.
+  const ARROW_AT = 0.75 * ARENA;
+  const ARROW_HALF = Math.sqrt(ARENA * ARENA - ARROW_AT * ARROW_AT);
+  const ARROWS = [
+    { d: [ 0,  1] },
+    { d: [ 1,  0] },
+    { d: [ 0, -1] },
+    { d: [-1,  0] },
+  ].map(a => {
+    const [dx, dy] = a.d;
+    return {
+      // bar centre, and the bar runs perpendicular to d
+      cx: CX + dx * ARROW_AT,
+      cy: CY + dy * ARROW_AT,
+      px: -dy, py: dx,                 // along-bar unit
+      ndx: dy, ndy: -dx,               // the gravity this arrow sets
+    };
+  });
+
+  // Must be clear of every influence ring, or holding attract at spawn drags
+  // you straight into a core before you have done anything.
+  const SPAWN = { x: CX, y: CY - 270 };
+
+  // ------------------------------------------------------------------- state
+  const state = {
+    shape: "circle",
+    rotating: true,
+    easeMs: 200,
+
+    x: SPAWN.x, y: SPAWN.y, vx: 0, vy: 0,
+    dead: false, deadTimer: 0,
+    latch: null,          // index into NODES
+    trail: [], trailTick: 0,
+
+    phi: 0,               // current gravity angle; 0 = world-down
+    phiFrom: 0, phiTo: 0, phiT: 1,
+
+    flips: 0, deaths: 0, alive: 0, elapsed: 0,
+    charge: 0,            // +1 attract, -1 repel, 0 neutral
+  };
+
+  // ------------------------------------------------------------------ physics
+  // gravity direction = (sin phi, cos phi). phi = 0 -> (0, 1), world-down.
+  const gdir = phi => [Math.sin(phi), Math.cos(phi)];
+
+  function easeInOut(t) {
+    return t <= 0 ? 0 : t >= 1 ? 1 : 0.5 - 0.5 * Math.cos(Math.PI * t);
+  }
+
+  function currentPhi() {
+    return state.phiFrom + (state.phiTo - state.phiFrom) * easeInOut(state.phiT);
+  }
+
+  function flipTo(dx, dy) {
+    const want = Math.atan2(dx, dy);
+    const now  = state.phiTo;
+    // shortest path; a 180 is taken clockwise by convention
+    let delta = want - now;
+    delta = ((delta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+    if (delta > Math.PI) delta -= 2 * Math.PI;
+    if (Math.abs(delta) < 1e-6) return false;
+    if (Math.abs(Math.abs(delta) - Math.PI) < 1e-6) delta = Math.PI;
+    state.phiFrom = state.phi;
+    state.phiTo = now + delta;
+    state.phiT = state.easeMs <= 0 ? 1 : 0;
+    state.flips++;
+    return true;
+  }
+
+  function chargeForce(px, py, node, charge, ignoreRadius) {
+    const dx = node.x - px, dy = node.y - py;
+    const r = Math.hypot(dx, dy);
+    if (r < 1e-9 || (r > node.r && !ignoreRadius)) return [0, 0];
+    let mag, sign;
+    if (charge > 0) { mag = K_ATTRACT * r;             sign =  1; }
+    else            { mag = K_REPEL * (node.r - r);    sign = -1; }
+    mag = Math.min(Math.max(0, mag), FORCE_MAX);
+    return [sign * mag * (dx / r), sign * mag * (dy / r)];
+  }
+
+  function activeNode() {
+    let best = null, bestD = Infinity;
+    for (let i = 0; i < NODES.length; i++) {
+      const n = NODES[i];
+      const d = Math.hypot(n.x - state.x, n.y - state.y);
+      if (d <= n.r && d < bestD) { best = i; bestD = d; }
+    }
+    return best;
+  }
+
+  function updateLatch(charge) {
+    if (charge === 0) { state.latch = null; return null; }
+    if (state.latch !== null) {
+      const n = NODES[state.latch];
+      const inside = Math.hypot(n.x - state.x, n.y - state.y) <= n.r;
+      // Attract holds past the rim; repel breaks the moment you leave.
+      if (charge > 0 || inside) return state.latch;
+      state.latch = null;
+    }
+    const found = activeNode();
+    if (found === null) return null;
+    state.latch = found;
+    return found;
+  }
+
+  function segmentsCross(ax, ay, bx, by, cx2, cy2, dx2, dy2) {
+    const d1x = bx - ax, d1y = by - ay;
+    const d2x = dx2 - cx2, d2y = dy2 - cy2;
+    const den = d1x * d2y - d1y * d2x;
+    if (Math.abs(den) < 1e-12) return false;
+    const t = ((cx2 - ax) * d2y - (cy2 - ay) * d2x) / den;
+    const u = ((cx2 - ax) * d1y - (cy2 - ay) * d1x) / den;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+  }
+
+  function outOfArena(x, y) {
+    const dx = x - CX, dy = y - CY;
+    if (state.shape === "circle") return Math.hypot(dx, dy) > ARENA + OUT_MARGIN;
+    return Math.abs(dx) > ARENA + OUT_MARGIN || Math.abs(dy) > ARENA + OUT_MARGIN;
+  }
+
+  function step(charge) {
+    // advance the flip ease
+    if (state.phiT < 1) {
+      state.phiT = state.easeMs <= 0 ? 1 : Math.min(1, state.phiT + (DT * 1000) / state.easeMs);
+    }
+    state.phi = currentPhi();
+
+    if (state.dead) return;
+
+    const [gx, gy] = gdir(state.phi);
+    let ax = gx * GRAVITY, ay = gy * GRAVITY;
+
+    const li = updateLatch(charge);
+    if (li !== null) {
+      const [fx, fy] = chargeForce(state.x, state.y, NODES[li], charge, charge > 0);
+      ax += fx; ay += fy;
+    }
+
+    state.vx += ax * DT;
+    state.vy += ay * DT;
+
+    // Per-axis clamp, generalised to gravity-relative axes: "fall" is along
+    // gravity, "carry" is perpendicular to it. At phi = 0 this is exactly the
+    // slice 1 vx/vy split.
+    const px = gy, py = -gx;                        // perpendicular unit
+    let fall  = state.vx * gx + state.vy * gy;
+    let carry = state.vx * px + state.vy * py;
+    if (fall > FALL_MAX) fall = FALL_MAX;           // upward is uncapped
+    if (Math.abs(carry) > SPEED_MAX) carry = Math.sign(carry) * SPEED_MAX;
+    state.vx = fall * gx + carry * px;
+    state.vy = fall * gy + carry * py;
+
+    const nx = state.x + state.vx * DT;
+    const ny = state.y + state.vy * DT;
+
+    for (const a of ARROWS) {
+      const x1 = a.cx + a.px * ARROW_HALF, y1 = a.cy + a.py * ARROW_HALF;
+      const x2 = a.cx - a.px * ARROW_HALF, y2 = a.cy - a.py * ARROW_HALF;
+      if (segmentsCross(state.x, state.y, nx, ny, x1, y1, x2, y2)) flipTo(a.ndx, a.ndy);
+    }
+
+    state.x = nx; state.y = ny;
+    state.elapsed += DT;
+    state.alive += DT;
+
+    for (const n of NODES) {
+      if (Math.hypot(n.x - state.x, n.y - state.y) <= n.core + PLAYER_RADIUS) { kill(); return; }
+    }
+    if (outOfArena(state.x, state.y)) kill();
+  }
+
+  function kill() {
+    state.dead = true;
+    state.deaths++;
+    state.deadTimer = 0;
+  }
+
+  function respawn() {
+    state.x = SPAWN.x; state.y = SPAWN.y;
+    state.vx = 0; state.vy = 0;
+    state.dead = false; state.latch = null;
+    state.trail.length = 0;
+    state.alive = 0;
+    state.phi = 0; state.phiFrom = 0; state.phiTo = 0; state.phiT = 1;
+  }
+
+  // ----------------------------------------------------------------- renderer
+  const cv = document.getElementById("c");
+  const ctx = cv.getContext("2d", { alpha: false });
+
+  // World -> screen. screen = centre + R(phi) * (p - centre), which is exactly
+  // the rotation that carries the gravity vector onto (0, 1).
+  let ca = 1, sa = 0;
+  function setCamera() {
+    const a = state.rotating ? state.phi : 0;
+    ca = Math.cos(a); sa = Math.sin(a);
+  }
+  function sx(x, y) { return CX + (x - CX) * ca - (y - CY) * sa; }
+  function sy(x, y) { return CY + (x - CX) * sa + (y - CY) * ca; }
+
+  function glow(x, y, radius, rgb, peak) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    g.addColorStop(0,    `rgba(${rgb},${peak})`);
+    g.addColorStop(0.45, `rgba(${rgb},${peak * 0.22})`);
+    g.addColorStop(1,    `rgba(${rgb},0)`);
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, 6.28318530718);
+    ctx.fill();
+  }
+
+  function drawArena() {
+    ctx.save();
+    ctx.strokeStyle = "rgba(80,240,255,0.30)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    if (state.shape === "circle") {
+      // A circle is its own rotation, so it needs no transform at all.
+      ctx.arc(CX, CY, ARENA, 0, 6.28318530718);
+    } else {
+      const c = [[-1,-1],[1,-1],[1,1],[-1,1]].map(([u,v]) =>
+        [sx(CX + u * ARENA, CY + v * ARENA), sy(CX + u * ARENA, CY + v * ARENA)]);
+      ctx.moveTo(c[0][0], c[0][1]);
+      for (let i = 1; i < 4; i++) ctx.lineTo(c[i][0], c[i][1]);
+      ctx.closePath();
+    }
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  function drawArrows() {
+    for (const a of ARROWS) {
+      const x1 = sx(a.cx + a.px * ARROW_HALF, a.cy + a.py * ARROW_HALF);
+      const y1 = sy(a.cx + a.px * ARROW_HALF, a.cy + a.py * ARROW_HALF);
+      const x2 = sx(a.cx - a.px * ARROW_HALF, a.cy - a.py * ARROW_HALF);
+      const y2 = sy(a.cx - a.px * ARROW_HALF, a.cy - a.py * ARROW_HALF);
+
+      ctx.strokeStyle = "rgba(169,123,255,0.85)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+      ctx.stroke();
+
+      // chevrons pointing the way gravity will go
+      const hx = sx(a.cx, a.cy), hy = sy(a.cx, a.cy);
+      const dx = a.ndx * ca - a.ndy * sa, dy = a.ndx * sa + a.ndy * ca;
+      const ux = -dy, uy = dx;
+      ctx.strokeStyle = "rgba(169,123,255,0.95)";
+      ctx.lineWidth = 2.5;
+      for (let k = 0; k < 2; k++) {
+        const bx = hx + dx * (k * 15), by = hy + dy * (k * 15);
+        ctx.beginPath();
+        ctx.moveTo(bx + ux * 11 - dx * 9, by + uy * 11 - dy * 9);
+        ctx.lineTo(bx + dx * 9, by + dy * 9);
+        ctx.lineTo(bx - ux * 11 - dx * 9, by - uy * 11 - dy * 9);
+        ctx.stroke();
+      }
+    }
+  }
+
+  function draw() {
+    setCamera();
+    ctx.fillStyle = "#05060b";
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.globalCompositeOperation = "lighter";
+
+    drawArena();
+
+    // trail, banded like the game's renderer
+    if (state.trail.length > 1) {
+      const total = state.trail.length;
+      const BANDS = 10;
+      ctx.lineWidth = 2;
+      for (let b = 0; b < BANDS; b++) {
+        const lo = Math.floor(b * (total - 1) / BANDS);
+        const hi = Math.floor((b + 1) * (total - 1) / BANDS);
+        if (hi - lo < 1) continue;
+        const t = (b + 0.5) / BANDS;
+        ctx.strokeStyle = `rgba(120,180,255,${0.03 + 0.47 * t * t})`;
+        ctx.beginPath();
+        for (let i = lo; i <= hi; i++) {
+          const p = state.trail[i];
+          const X = sx(p[0], p[1]), Y = sy(p[0], p[1]);
+          i === lo ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
+        }
+        ctx.stroke();
+      }
+    }
+
+    // nodes
+    for (let i = 0; i < NODES.length; i++) {
+      const n = NODES[i];
+      const X = sx(n.x, n.y), Y = sy(n.x, n.y);
+      const isActive = state.latch === i;
+      ctx.strokeStyle = isActive ? "rgba(80,240,255,0.55)" : "rgba(80,240,255,0.17)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(X, Y, n.r, 0, 6.28318530718);
+      ctx.stroke();
+      glow(X, Y, n.core * (isActive ? 4.5 : 3.2), "80,240,255", isActive ? 0.85 : 0.5);
+      ctx.fillStyle = "rgba(235,255,255,0.95)";
+      ctx.beginPath();
+      ctx.arc(X, Y, n.core, 0, 6.28318530718);
+      ctx.fill();
+    }
+
+    drawArrows();
+
+    // beam
+    if (state.latch !== null && state.charge !== 0 && !state.dead) {
+      const n = NODES[state.latch];
+      const [fx, fy] = chargeForce(state.x, state.y, n, state.charge, state.charge > 0);
+      const strength = Math.min(1, Math.hypot(fx, fy) / FORCE_MAX);
+      ctx.strokeStyle = state.charge > 0
+        ? `rgba(80,240,255,${0.22 + strength * 0.75})`
+        : `rgba(255,120,200,${0.22 + strength * 0.75})`;
+      ctx.lineWidth = 1 + strength * 7;
+      ctx.beginPath();
+      ctx.moveTo(sx(state.x, state.y), sy(state.x, state.y));
+      ctx.lineTo(sx(n.x, n.y), sy(n.x, n.y));
+      ctx.stroke();
+    }
+
+    // player
+    if (!state.dead) {
+      const X = sx(state.x, state.y), Y = sy(state.x, state.y);
+      glow(X, Y, PLAYER_RADIUS * 5, "255,240,120", 0.9);
+      ctx.fillStyle = "rgba(255,240,120,1)";
+      ctx.beginPath();
+      ctx.arc(X, Y, PLAYER_RADIUS, 0, 6.28318530718);
+      ctx.fill();
+    }
+
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  // -------------------------------------------------------------- input + loop
+  const held = { attract: false, repel: false };
+
+  function charge() {
+    if (held.attract && !held.repel) return 1;
+    if (held.repel && !held.attract) return -1;
+    return 0;
+  }
+
+  cv.addEventListener("contextmenu", e => e.preventDefault());
+  cv.addEventListener("pointerdown", e => {
+    cv.setPointerCapture(e.pointerId);
+    if (e.button === 2) held.repel = true; else held.attract = true;
+    e.preventDefault();
+  });
+  const release = e => {
+    if (e.button === 2) held.repel = false; else held.attract = false;
+  };
+  cv.addEventListener("pointerup", release);
+  cv.addEventListener("pointercancel", () => { held.attract = held.repel = false; });
+
+  addEventListener("keydown", e => {
+    const k = e.key.toLowerCase();
+    if (k === "j") held.attract = true;
+    else if (k === "k") held.repel = true;
+    else if (k === "f") quarterFlip();   // key-repeat is intentional: hold to hammer it
+    else if (k === "r") respawn();
+    else return;
+    e.preventDefault();
+  });
+  addEventListener("keyup", e => {
+    const k = e.key.toLowerCase();
+    if (k === "j") held.attract = false;
+    else if (k === "k") held.repel = false;
+  });
+
+  function quarterFlip() {
+    const next = state.phiTo + HALF_PI;
+    const [dx, dy] = gdir(next);
+    flipTo(dx, dy);
+  }
+
+  // controls
+  const $ = id => document.getElementById(id);
+  function pair(aId, bId, onA, onB) {
+    const a = $(aId), b = $(bId);
+    a.addEventListener("click", () => {
+      a.setAttribute("aria-pressed", "true"); b.setAttribute("aria-pressed", "false"); onA();
+    });
+    b.addEventListener("click", () => {
+      b.setAttribute("aria-pressed", "true"); a.setAttribute("aria-pressed", "false"); onB();
+    });
+  }
+  pair("shapeCircle", "shapeSquare",
+       () => { state.shape = "circle"; }, () => { state.shape = "square"; });
+  pair("camRot", "camFix",
+       () => { state.rotating = true; }, () => { state.rotating = false; });
+
+  $("ease").addEventListener("input", e => {
+    state.easeMs = +e.target.value;
+    $("easeVal").textContent = `${state.easeMs} ms`;
+  });
+  $("flipNow").addEventListener("click", quarterFlip);
+  $("reset").addEventListener("click", () => { respawn(); state.flips = 0; state.deaths = 0; });
+
+  // telemetry
+  const tFps = $("tFps"), tGrav = $("tGrav"), tFlips = $("tFlips"),
+        tRate = $("tRate"), tDeaths = $("tDeaths"), tAlive = $("tAlive"),
+        clipwarn = $("clipwarn");
+
+  const GLYPH = ["▼", "◀", "▲", "▶"];
+  let frames = 0, fpsAcc = 0, fpsShown = 0, last = 0, acc = 0;
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!last) { last = now; return; }
+    const dt = Math.min((now - last) / 1000, 0.25);
+    last = now;
+
+    state.charge = charge();
+
+    acc += dt;
+    let steps = 0;
+    while (acc >= DT && steps < MAX_STEPS) {
+      step(state.charge);
+      acc -= DT; steps++;
+      if (!state.dead && ++state.trailTick >= TRAIL_EVERY) {
+        state.trailTick = 0;
+        state.trail.push([state.x, state.y]);
+        if (state.trail.length > TRAIL_MAX) state.trail.shift();
+      }
+    }
+    if (steps === MAX_STEPS) acc = 0;
+
+    if (state.dead) {
+      state.deadTimer += dt;
+      if (state.deadTimer >= RESPAWN) respawn();
+    }
+
+    draw();
+
+    // readouts
+    fpsAcc += dt; frames++;
+    if (fpsAcc >= 0.4) { fpsShown = frames / fpsAcc; frames = 0; fpsAcc = 0; }
+    tFps.textContent = fpsShown.toFixed(0);
+    const q = ((Math.round(state.phiTo / HALF_PI) % 4) + 4) % 4;
+    tGrav.textContent = GLYPH[q];
+    tFlips.textContent = state.flips;
+    tRate.textContent = state.elapsed > 2 ? (state.flips / (state.elapsed / 60)).toFixed(1) : "—";
+    tDeaths.textContent = state.deaths;
+    tAlive.textContent = state.alive.toFixed(1) + "s";
+    tAlive.classList.toggle("warn", state.dead);
+
+    // square-corner clipping indicator
+    const mid = Math.abs(((state.phi / HALF_PI) % 1 + 1) % 1);
+    const offAxis = mid > 0.02 && mid < 0.98;
+    clipwarn.classList.toggle("on",
+      state.shape === "square" && state.rotating && offAxis);
+  }
+
+  respawn();
+  requestAnimationFrame(frame);
+})();
+</script>

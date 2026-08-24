@@ -1,0 +1,53 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-22-gravi-charged-surfaces-and-repel-charges.md",
+  "specPath": "docs/superpowers/specs/2026-08-22-gravi-charged-surfaces-and-repel-charges-design.md",
+  "tasks": [
+    {
+      "id": 14,
+      "subject": "Task 14: chamber.py — nearest_wall",
+      "status": "pending",
+      "description": "**Goal:** A pure geometry helper giving the distance to the nearer side wall and the inward normal from it.\n\n**Files:**\n- Modify: `src/gravi/chamber.py`\n- Test: `tests/test_chamber.py`\n\n**Acceptance Criteria:**\n- [ ] At the centre lane the distance equals `half_width`\n- [ ] At either wall the distance is 0 and the normal points away from that wall\n- [ ] `u == 0` breaks deterministically\n- [ ] Past a wall gives 0, never a negative\n- [ ] Works in a turned corridor\n- [ ] `chamber.py` stays pure\n\n**Verify:** `PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/test_chamber.py tests/test_purity.py -q` → all pass\n\n**Steps:** Five failing tests, then `nearest_wall(x, y) -> (distance, normal)`. Full code in the plan, section \"Task 1\".\n\n```json:metadata\n{\"files\": [\"src/gravi/chamber.py\", \"tests/test_chamber.py\"], \"verifyCommand\": \"PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/test_chamber.py tests/test_purity.py -q\", \"acceptanceCriteria\": [\"centre lane distance equals half_width\", \"at a wall distance is 0 and normal points inward\", \"u == 0 breaks deterministically\", \"past a wall gives 0\", \"works in a turned corridor\", \"chamber.py stays pure\"]}\n```"
+    },
+    {
+      "id": 15,
+      "subject": "Task 15: field.py — surface_force",
+      "status": "pending",
+      "description": "**Goal:** The repel law for a flat surface, in the module the validator and trainer share.\n\n**Files:**\n- Modify: `src/gravi/field.py`\n- Test: `tests/test_field.py`\n\n**Acceptance Criteria:**\n- [ ] Zero at and beyond the reach\n- [ ] `k_repel * reach` at contact, capped by `force_max`\n- [ ] Points along the supplied normal\n- [ ] A negative distance is contact, never a pull\n- [ ] `field.py` stays pure\n\n**Verify:** `PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/test_field.py tests/test_purity.py -q` → all pass\n\n**Steps:** Four failing tests, then `surface_force(distance, normal, params, reach)`. Full code in the plan, section \"Task 2\".\n\n```json:metadata\n{\"files\": [\"src/gravi/field.py\", \"tests/test_field.py\"], \"verifyCommand\": \"PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/test_field.py tests/test_purity.py -q\", \"acceptanceCriteria\": [\"zero at and beyond the reach\", \"k_repel*reach at contact\", \"capped by force_max\", \"points along the normal\", \"negative distance is contact\", \"field.py stays pure\"]}\n```"
+    },
+    {
+      "id": 16,
+      "subject": "Task 16: config.py — wall reach and repel budget tunables",
+      "status": "pending",
+      "description": "**Goal:** Every constant in the design is live-adjustable, because none is settled.\n\n**Files:**\n- Modify: `src/gravi/config.py`, `presets/default.json`\n- Test: `tests/test_config.py`\n\n**Acceptance Criteria:**\n- [ ] Six knobs with the design's values (wall_reach 260, repel_charges_max 3, repel_charge_seconds 0.35, repel_min_spend 0.5, repel_regen 0.4, repel_attach_bonus 0.5)\n- [ ] Defaults inside bounds\n- [ ] The press floor cannot exceed the tank\n- [ ] The preset carries the same values\n\n**Verify:** `PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/test_config.py -q` → all pass\n\n**Steps:** Two failing tests, six TunableSpec entries, preset update. Full code in the plan, section \"Task 3\".\n\n```json:metadata\n{\"files\": [\"src/gravi/config.py\", \"presets/default.json\", \"tests/test_config.py\"], \"verifyCommand\": \"PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/ -q\", \"acceptanceCriteria\": [\"six knobs with the design's values\", \"defaults inside bounds\", \"press floor cannot exceed the tank\", \"preset carries the same values\"]}\n```"
+    },
+    {
+      "id": 17,
+      "subject": "Task 17: sim.py — the wall is the fallback surface",
+      "status": "pending",
+      "blockedBy": [14, 15, 16],
+      "description": "**Goal:** When repel is held and no node is in reach, the player pushes off the nearer wall. This removes the unlucky death.\n\n**Files:**\n- Modify: `src/gravi/sim.py`\n- Test: `tests/test_sim.py`\n\n**Acceptance Criteria:**\n- [ ] `World` takes `wall_reach`, default 260.0\n- [ ] Repel with no node in reach pushes away from the nearer wall\n- [ ] A node in range wins — wall force is not added on top\n- [ ] Beyond the reach, repel does nothing\n- [ ] A player crossing a turn at full speed with no node in reach can change trajectory before the wall\n- [ ] Attract unaffected\n\n**Verify:** `PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/test_sim.py -q` → all pass\n\n**Steps:** Four failing tests including the post-turn integration test; thread `wall_reach`; add the `elif node is None and charge is Charge.REPEL` branch. Full code in the plan, section \"Task 4\".\n\n```json:metadata\n{\"files\": [\"src/gravi/sim.py\", \"tests/test_sim.py\"], \"verifyCommand\": \"PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/ -q\", \"acceptanceCriteria\": [\"World takes wall_reach\", \"repel with no node pushes off the nearer wall\", \"a node in range wins\", \"beyond reach does nothing\", \"a player crossing a turn can save themselves on a wall\", \"attract unaffected\"]}\n```"
+    },
+    {
+      "id": 18,
+      "subject": "Task 18: sim.py — repel costs a rechargeable charge",
+      "status": "pending",
+      "blockedBy": [17],
+      "description": "**Goal:** Repel drains a rechargeable budget, so it is a timing decision rather than a button to hold.\n\n**Files:**\n- Modify: `src/gravi/sim.py`, `docs/superpowers/specs/2026-08-11-gravi-core-design.md`\n- Test: `tests/test_sim.py`\n\n**Acceptance Criteria:**\n- [ ] Full tank at start, `repel_charges` exposed\n- [ ] Drains only while producing force; a press in open space is free\n- [ ] A press that produced force costs at least `repel_min_spend`\n- [ ] Does not fire below `repel_min_spend`\n- [ ] Regen passive, pauses while draining, capped\n- [ ] Attach bonus once per new latch\n- [ ] `reset()` refills\n- [ ] Attract costs nothing\n- [ ] Core spec §2.3 carries the amendment permitting the meter\n\n**Verify:** `PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/test_sim.py -q` → all pass\n\n**Steps:** Eight failing tests; thread five knobs; `_open_or_continue_press`/`_end_press`; compute the force candidate BEFORE paying; attach bonus; core spec amendment. Full code in the plan, section \"Task 5\".\n\n```json:metadata\n{\"files\": [\"src/gravi/sim.py\", \"tests/test_sim.py\", \"docs/superpowers/specs/2026-08-11-gravi-core-design.md\"], \"verifyCommand\": \"PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/ -q\", \"acceptanceCriteria\": [\"full tank at start\", \"drains only while producing force\", \"press in open space is free\", \"press costs at least the floor\", \"does not fire below the floor\", \"regen passive and pauses while draining\", \"attach bonus once per latch\", \"reset refills\", \"attract costs nothing\", \"core spec 2.3 amended\"]}\n```"
+    },
+    {
+      "id": 19,
+      "subject": "Task 19: render — the repel budget as arcs of light",
+      "status": "pending",
+      "blockedBy": [18],
+      "description": "**Goal:** The budget is visible without a UI bar.\n\n**Files:**\n- Modify: `src/gravi/render/neon.py`, `main.py`\n- Test: `tests/test_neon.py`\n\n**Acceptance Criteria:**\n- [ ] One arc per whole charge, in the repel hue\n- [ ] A full tank reads brighter than an empty one\n- [ ] A partial charge draws partly lit\n- [ ] Arc radius scales with the camera's view\n- [ ] `main.py` passes the live level and sweeps the six tunables through `build_world` and `apply_tunables`\n\n**Verify:** `PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/test_neon.py -q` → all pass, and the headless smoke prints `dead: False` with no traceback\n\n**Steps:** Two failing pixel tests; `draw_charges` via `pygame.draw.arc`; wire into `main.py` after `draw_player`. Full code in the plan, section \"Task 6\".\n\n```json:metadata\n{\"files\": [\"src/gravi/render/neon.py\", \"main.py\", \"tests/test_neon.py\"], \"verifyCommand\": \"PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/ -q\", \"acceptanceCriteria\": [\"one arc per whole charge\", \"full brighter than empty\", \"partial draws partly lit\", \"radius scales with the view\", \"main.py passes the level and sweeps the tunables\"]}\n```"
+    },
+    {
+      "id": 20,
+      "subject": "Task 20: rebuild both builds and hand them over",
+      "status": "pending",
+      "blockedBy": [19],
+      "description": "**Goal:** The author can play charged surfaces and the charge budget in both builds.\n\n**Files:** none (build and process only)\n\n**Acceptance Criteria:**\n- [ ] Full suite green\n- [ ] The packaged bundle contains `surface_force` and `draw_charges`\n- [ ] `tools/serve_web.py` on 8000, native relaunched\n- [ ] Branch pushed\n\n**Verify:** `PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/ -q` → all pass, and the zipfile bundle check prints `True True`\n\n**Steps:** Suite; `pygbag --build main.py`; verify bundle CONTENTS (a timestamp is not proof); restart server and native; push. Full detail in the plan, section \"Task 7\".\n\n```json:metadata\n{\"files\": [], \"verifyCommand\": \"PYTHONPATH=src /home/ddgg0/projects/Gravi/.venv/bin/pytest tests/ -q\", \"acceptanceCriteria\": [\"full suite green\", \"bundle contains surface_force and draw_charges\", \"server on 8000 and native relaunched\", \"branch pushed\"]}\n```"
+    }
+  ],
+  "lastUpdated": "2026-08-22"
+}

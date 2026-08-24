@@ -1,0 +1,39 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-17-gravi-s8-run-shell.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: the scene layer",
+      "status": "pending",
+      "description": "**Goal:** Title, run, death and summary as explicit scenes, with main.py reduced to a pump.\n\n**Files:**\n- Create: `src/gravi/scenes/__init__.py`, `base.py`, `title.py`, `run.py`, `summary.py`\n- Modify: `main.py`\n- Test: `tests/test_scenes.py`\n\n**Acceptance Criteria:**\n- [ ] A Scene has handle(event), tick(dt), draw(surface) and may return a transition\n- [ ] Transitions are tested headlessly with no display: title -> run -> summary -> run\n- [ ] The tuning overlay and the room editor are still reachable from the run scene\n- [ ] main.py is under 100 lines and still awaits asyncio.sleep(0) every frame\n\n**Verify:** `PYTHONPATH= SDL_VIDEODRIVER=dummy .venv/bin/pytest tests/test_scenes.py -v` -> pass\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/scenes/\", \"main.py\"], \"verifyCommand\": \"PYTHONPATH= SDL_VIDEODRIVER=dummy .venv/bin/pytest tests/test_scenes.py -v\", \"acceptanceCriteria\": [\"scene protocol\", \"headless transition tests\", \"tuning and editor reachable\", \"async yield preserved\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: scoring and the persisted best",
+      "status": "pending",
+      "description": "**Goal:** Score is distance travelled along the actual path; chambers cleared is the separate difficulty clock; best survives a restart.\n\n**Files:**\n- Create: `src/gravi/score.py`\n- Modify: `src/gravi/scenes/run.py`, `summary.py`\n- Test: `tests/test_score.py`\n\n**Acceptance Criteria:**\n- [ ] Score is path length, not displacement \u2014 proven with two scripted runs over the same ground\n- [ ] Chambers cleared is tracked separately\n- [ ] Best distance and best chambers persist through storage.py and fail soft in the browser\n- [ ] The summary shows distance, chambers, best, and the delta against best\n\n**Verify:** `PYTHONPATH= .venv/bin/pytest tests/test_score.py -v` -> pass\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/score.py\"], \"verifyCommand\": \"PYTHONPATH= .venv/bin/pytest tests/test_score.py -v\", \"acceptanceCriteria\": [\"path length not displacement\", \"chambers cleared separate\", \"best persists and fails soft\"]}\n```",
+      "blockedBy": [
+        0
+      ]
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: the run event log",
+      "status": "pending",
+      "description": "**Goal:** Every run emits the agreed event stream, and it round-trips. This is the schema S5 and S9 depend on.\n\n**Files:**\n- Create: `src/gravi/runlog.py`\n- Modify: `src/gravi/sim.py` (emit hooks only)\n- Test: `tests/test_runlog.py`\n\n**Acceptance Criteria:**\n- [ ] World gains an optional listener; with no listener the simulation is byte-identical to before\n- [ ] Events serialise to plain JSON and back\n- [ ] The log is capped and drops oldest-first\n- [ ] A recorded run replays to the same outcome from its seed and charge sequence\n- [ ] Recording costs under 5% of frame time, measured with tools/perf_probe.py\n\n**Verify:** `PYTHONPATH= .venv/bin/pytest tests/test_runlog.py tests/test_sim.py -v` -> pass\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/runlog.py\", \"src/gravi/sim.py\"], \"verifyCommand\": \"PYTHONPATH= .venv/bin/pytest tests/test_runlog.py tests/test_sim.py -v\", \"acceptanceCriteria\": [\"no behaviour change without a listener\", \"JSON round trip\", \"bounded log\", \"replay fidelity\", \"under 5% frame cost\"]}\n```",
+      "blockedBy": [
+        0
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: procedural audio",
+      "status": "pending",
+      "description": "**Goal:** Sound for grab, release, flip and death \u2014 generated, not authored.\n\n**Files:**\n- Create: `src/gravi/audio.py` (port from BlueBall sfx_gen.py)\n- Test: `tests/test_audio.py`\n\n**Acceptance Criteria:**\n- [ ] No audio asset files \u2014 everything synthesised at startup\n- [ ] Audio failing to initialise disables sound instead of raising\n- [ ] Beam pitch tracks force magnitude\n- [ ] A mute key, and the mute state persists\n\n**Verify:** `PYTHONPATH= SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/pytest tests/test_audio.py -v` -> pass\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/audio.py\"], \"verifyCommand\": \"PYTHONPATH= SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy .venv/bin/pytest tests/test_audio.py -v\", \"acceptanceCriteria\": [\"no asset files\", \"fails soft without audio\", \"pitch tracks force\", \"mute persists\"]}\n```",
+      "blockedBy": [
+        0
+      ]
+    }
+  ],
+  "lastUpdated": "2026-08-17"
+}
