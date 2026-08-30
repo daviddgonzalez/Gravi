@@ -27,7 +27,11 @@ if [ -z "$PYGBAG" ]; then
     elif command -v pygbag >/dev/null 2>&1; then
         PYGBAG="pygbag"
     else
-        echo "error: pygbag not found. pip install -e '.[dev]'" >&2
+        echo "error: pygbag not found. pip install -e '.[dev]', or point" \
+             "PYGBAG at one that exists:" >&2
+        echo "  PYGBAG=/path/to/.venv/bin/pygbag $0 ${*:-}" >&2
+        echo "A git worktree has no .venv of its own, so this is the normal" \
+             "case when building from one." >&2
         exit 1
     fi
 fi
