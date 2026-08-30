@@ -99,3 +99,38 @@ def charge_force(
     ux = dx / r
     uy = dy / r
     return (sign * magnitude * ux, sign * magnitude * uy)
+
+
+def surface_force(distance: float, normal: Vec, params: FieldParams,
+                  reach: float) -> Vec:
+    """Repel force from a flat charged surface, pushing along `normal`.
+
+    `normal` must be a unit vector pointing AWAY from the surface, and
+    `distance` is how far the player is from it.
+
+    A surface obeys the node's repel law, which core spec 2.3 requires
+    ("charged surfaces obey the same law"): strongest at contact, fading
+    linearly to nothing at the rim. A wall has no attract case — deferred
+    deliberately, see the 2026-08-22 design doc section 7.
+
+    A negative distance means the player is already past the surface. It is
+    treated as contact rather than extrapolated, because k*(reach - distance)
+    keeps growing out there and, worse, nothing stops the caller from having
+    handed us an inward normal — the pair would then pull them further
+    through. They die on the next bounds check regardless.
+    """
+    # `not (distance < reach)` rather than `distance >= reach`, so that a nan
+    # distance degrades to NO force. The naive spelling falls through for nan
+    # (every nan comparison is False) into `max(0.0, distance)`, which returns
+    # 0.0 — because `nan > 0.0` is False too — laundering the nan into "at
+    # contact" and handing back a full-strength, correctly-directed phantom
+    # push. That is worse than nan poisoning: a nan velocity is loud and breaks
+    # a draw call, whereas this is indistinguishable downstream from a real
+    # wall hit. Neither argument order was ever chosen deliberately. This
+    # module is shared with the trainer, where unstable exploration produces
+    # nan positions as a matter of course.
+    if reach <= 0.0 or not (distance < reach):
+        return (0.0, 0.0)
+    magnitude = params.k_repel * (reach - max(0.0, distance))
+    magnitude = min(max(0.0, magnitude), params.force_max)
+    return (normal[0] * magnitude, normal[1] * magnitude)
