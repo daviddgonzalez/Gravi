@@ -1,0 +1,39 @@
+{
+  "planPath": "docs/superpowers/plans/2026-08-17-gravi-s3-ai-stack-port.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: package skeleton and the environment seam",
+      "status": "pending",
+      "description": "**Goal:** Define the interface the GA trains against so every ported module compiles against it and S5's real encoding is a drop-in.\n\n**Files:**\n- Create: `src/gravi/ai/__init__.py`, `src/gravi/ai/env.py`\n- Test: `tests/test_ai_env.py`\n\n**Acceptance Criteria:**\n- [ ] Environment protocol: reset, observe, act, step, done, outcome\n- [ ] The action space is Gravi's three charges (attract/repel/neutral), not a key bitfield\n- [ ] StubEnvironment implements the protocol with a trivial learnable task\n- [ ] src/gravi/ai/ imports no pygame\n\n**Verify:** `PYTHONPATH= .venv/bin/pytest tests/test_ai_env.py tests/test_purity.py -v` -> all pass\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/ai/env.py\", \"tests/test_ai_env.py\"], \"verifyCommand\": \"PYTHONPATH= .venv/bin/pytest tests/test_ai_env.py tests/test_purity.py -v\", \"acceptanceCriteria\": [\"protocol defined\", \"three-state action space\", \"stub runs to done\", \"no pygame\"]}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: port genome, network, and the GA operators",
+      "status": "pending",
+      "description": "**Goal:** genome.py, ftnn.py and ga.py running in Gravi with tests, unchanged in behaviour.\n\n**Files:**\n- Create: `src/gravi/ai/genome.py`, `ftnn.py`, `ga.py`\n- Test: `tests/test_ai_ga.py`\n\n**Acceptance Criteria:**\n- [ ] Copied verbatim and committed first, then edited \u2014 the adaptation is a readable diff\n- [ ] No BlueBall vocabulary remains (grep for blueball, jump, ability, key, raycast -> zero hits)\n- [ ] Network widths come from the environment, not a hardcoded platformer observation\n- [ ] Output layer is three-way and argmax-decodes to a Charge\n- [ ] Same seed produces byte-identical populations\n- [ ] BlueBall's repo is untouched\n\n**Verify:** `PYTHONPATH= .venv/bin/pytest tests/test_ai_ga.py -v` -> all pass\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/ai/genome.py\", \"src/gravi/ai/ftnn.py\", \"src/gravi/ai/ga.py\"], \"verifyCommand\": \"PYTHONPATH= .venv/bin/pytest tests/test_ai_ga.py -v\", \"acceptanceCriteria\": [\"verbatim copy committed first\", \"no BlueBall vocabulary\", \"three-way output\", \"seeded reproducibility\", \"BlueBall clean\"]}\n```",
+      "blockedBy": [
+        0
+      ]
+    },
+    {
+      "id": 2,
+      "subject": "Task 3: port episodes, trainer, metrics, persistence",
+      "status": "pending",
+      "description": "**Goal:** A full training run against StubEnvironment converges, checkpoints, and resumes.\n\n**Files:**\n- Create: `src/gravi/ai/episodes.py`, `trainer.py`, `metrics.py`, `persistence.py`\n- Test: `tests/test_ai_trainer.py`\n\n**Acceptance Criteria:**\n- [ ] A 15-generation run measurably improves mean fitness\n- [ ] A run is fully reproducible from its seed\n- [ ] save_population returns False instead of raising when the write fails\n- [ ] metrics records per-generation best/mean/worst and elapsed wall clock\n- [ ] No hidden global level state \u2014 the trainer streams the environment the caller asks for\n\n**Verify:** `PYTHONPATH= .venv/bin/pytest tests/test_ai_trainer.py -v` -> all pass, under 30 s\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/ai/trainer.py\", \"src/gravi/ai/episodes.py\", \"src/gravi/ai/persistence.py\"], \"verifyCommand\": \"PYTHONPATH= .venv/bin/pytest tests/test_ai_trainer.py -v\", \"acceptanceCriteria\": [\"fitness improves\", \"seeded reproducibility\", \"fail-soft persistence\", \"per-generation metrics\"]}\n```",
+      "blockedBy": [
+        1
+      ]
+    },
+    {
+      "id": 3,
+      "subject": "Task 4: a CLI entry point for the trainer",
+      "status": "pending",
+      "description": "**Goal:** python -m gravi.ai trains a population and writes a checkpoint, so S7 can invoke it as a build step.\n\n**Files:**\n- Create: `src/gravi/ai/__main__.py`\n- Test: `tests/test_ai_cli.py`\n\n**Acceptance Criteria:**\n- [ ] `python -m gravi.ai --generations 3 --population 8 --seed 1 --out FILE` exits 0 and writes the file\n- [ ] --help documents every flag\n- [ ] One progress line per generation with best/mean fitness\n- [ ] Never imports pygame\n\n**Verify:** `PYTHONPATH= .venv/bin/python -m gravi.ai --generations 3 --population 8 --seed 1 --out $CLAUDE_JOB_DIR/tmp/pop.json` -> exit 0, file exists\n\n**Steps:** see the task section in the plan document for the full TDD steps and code.\n\n```json:metadata\n{\"files\": [\"src/gravi/ai/__main__.py\", \"tests/test_ai_cli.py\"], \"verifyCommand\": \"PYTHONPATH= .venv/bin/pytest tests/test_ai_cli.py -v\", \"acceptanceCriteria\": [\"CLI exits 0 and writes a checkpoint\", \"help documents flags\", \"identical output for identical seed\", \"no pygame\"]}\n```",
+      "blockedBy": [
+        2
+      ]
+    }
+  ],
+  "lastUpdated": "2026-08-17"
+}

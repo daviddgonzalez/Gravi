@@ -1,31 +1,79 @@
 import math
+from dataclasses import replace
 
 import pytest
 
+from gravi.chamber import ChamberChain, ChamberParams
 from gravi.field import Charge, FieldParams, Node
-from gravi.room import Room
+from gravi.gravity import GravityState
 from gravi.sim import World, charge_from_input
 
 PARAMS = FieldParams(k_attract=8.0, k_repel=12.0, force_max=1e9)
 
+# Slice 1's tests were written against a room with no corridor walls. One
+# enormous chamber is that room: identical physics, no geometry in the way.
+WIDE = ChamberParams(depth=1e6, half_width=1e6)
 
-def make_world(gravity_y=0.0, spawn=(300.0, 400.0), nodes=None,
-               width=1280.0, height=720.0, speed_max=1e9, fall_speed_max=1e9):
-    room = Room(
-        spawn=spawn,
-        nodes=nodes if nodes is not None else [Node(400.0, 400.0, 250.0, 18.0)],
-        width=width,
-        height=height,
+
+def chain_with(nodes, params=None):
+    """A deterministic one-archetype chain whose first chamber holds exactly
+    the nodes a test cares about."""
+    chain = ChamberChain(seed=0, params=params or ChamberParams())
+    chain.chambers[0] = replace(chain.chambers[0], nodes=tuple(nodes))
+    return chain
+
+
+def make_world(nodes=(), flip_duration=0.3, gravity=500.0, spawn=None,
+               chamber_params=None, player_radius=7.0, speed_max=600.0,
+               fall_speed_max=600.0, rigid_rope=False, wall_reach=260.0,
+               repel_charges_max=3.0, repel_charge_seconds=0.35,
+               repel_min_spend=0.5, repel_regen=0.4,
+               repel_attach_bonus=0.5):
+    # rigid_rope defaults to False (the spring) here even though World itself
+    # now defaults to True (the rigid rope, played and adopted 2026-08-20).
+    # Every "slice 1 regressions" test below this point was written against
+    # the spring's rules — the rope holding past the rim, k*r tightening the
+    # further out you stretch — and the spring is still a real mode behind
+    # `T`, so these tests must keep exercising it explicitly rather than
+    # silently starting to test the rigid rope's different rules instead. The
+    # rope tests further down opt into rigid_rope=True by hand.
+    w = World(
+        chain=chain_with(nodes, chamber_params),
+        params=PARAMS,
+        gravity=gravity,
+        gravity_state=GravityState(flip_duration=flip_duration),
+        player_radius=player_radius,
+        speed_max=speed_max,
+        fall_speed_max=fall_speed_max,
+        rigid_rope=rigid_rope,
+        wall_reach=wall_reach,
+        repel_charges_max=repel_charges_max,
+        repel_charge_seconds=repel_charge_seconds,
+        repel_min_spend=repel_min_spend,
+        repel_regen=repel_regen,
+        repel_attach_bonus=repel_attach_bonus,
     )
-    return World(room=room, params=PARAMS, gravity_y=gravity_y,
-                 player_radius=9.0, speed_max=speed_max,
-                 fall_speed_max=fall_speed_max)
+    if spawn is not None:
+        w.x, w.y = spawn
+    return w
 
+
+def lab_world(gravity=0.0, spawn=(300.0, 400.0), nodes=None,
+              speed_max=1e9, fall_speed_max=1e9, rigid_rope=False):
+    """Slice 1's `make_world`, on one wide chamber instead of a room."""
+    return make_world(
+        nodes=nodes if nodes is not None else [Node(400.0, 400.0, 250.0, 18.0)],
+        gravity=gravity, spawn=spawn, chamber_params=WIDE, player_radius=9.0,
+        speed_max=speed_max, fall_speed_max=fall_speed_max,
+        rigid_rope=rigid_rope)
+
+
+# --- slice 1 regressions, ported onto the chain ---------------------------
 
 def test_gravity_accelerates_the_player_downward():
     # Tall room so the out-of-bounds death check does not halt the fall before
     # a full second has elapsed.
-    w = make_world(gravity_y=1000.0, nodes=[], height=1e6)
+    w = lab_world(gravity=1000.0, nodes=[])
     for _ in range(240):  # one second at 240 Hz
         w.step(Charge.NEUTRAL)
     assert w.vy == pytest.approx(1000.0, rel=1e-6)
@@ -34,19 +82,19 @@ def test_gravity_accelerates_the_player_downward():
 def test_active_node_is_the_nearest_containing_node():
     near = Node(310.0, 400.0, 100.0, 10.0)
     far = Node(360.0, 400.0, 400.0, 10.0)
-    w = make_world(nodes=[far, near])
+    w = lab_world(nodes=[far, near])
     assert w.active_node() is near
 
 
 def test_active_node_is_none_outside_every_radius():
-    w = make_world(nodes=[Node(1000.0, 1000.0, 50.0, 10.0)])
+    w = lab_world(nodes=[Node(1000.0, 1000.0, 50.0, 10.0)])
     assert w.active_node() is None
 
 
 def test_ties_break_on_lowest_index():
     a = Node(300.0, 350.0, 200.0, 10.0)
     b = Node(300.0, 450.0, 200.0, 10.0)  # same distance from spawn (300, 400)
-    w = make_world(nodes=[a, b])
+    w = lab_world(nodes=[a, b])
     assert w.active_node() is a
 
 
@@ -55,7 +103,7 @@ def test_only_the_active_node_applies_force():
     # would partially cancel; only the nearer one may contribute.
     near = Node(400.0, 400.0, 400.0, 10.0)   # 100px right of spawn
     far = Node(100.0, 400.0, 400.0, 10.0)    # 200px left of spawn
-    w = make_world(nodes=[far, near])
+    w = lab_world(nodes=[far, near])
     assert w.active_node() is near
     w.step(Charge.ATTRACT)
     expected_ax = 8.0 * 100.0  # k_attract * r toward the near node, i.e. +x
@@ -64,7 +112,7 @@ def test_only_the_active_node_applies_force():
 
 
 def test_player_dies_on_core_contact():
-    w = make_world(spawn=(400.0, 400.0 - 30.0),
+    w = lab_world(spawn=(400.0, 400.0 - 30.0),
                    nodes=[Node(400.0, 400.0, 250.0, 18.0)])
     assert not w.dead
     for _ in range(240 * 3):
@@ -74,21 +122,12 @@ def test_player_dies_on_core_contact():
     assert w.dead
 
 
-def test_player_dies_leaving_room_bounds():
-    w = make_world(gravity_y=2000.0, nodes=[])
-    for _ in range(240 * 5):
-        w.step(Charge.NEUTRAL)
-        if w.dead:
-            break
-    assert w.dead
-
-
 def test_reset_restores_spawn_state():
-    w = make_world(gravity_y=1000.0, nodes=[])
+    w = lab_world(gravity=1000.0, nodes=[])
     for _ in range(100):
         w.step(Charge.NEUTRAL)
     w.reset()
-    assert (w.x, w.y) == w.room.spawn
+    assert (w.x, w.y) == w.chain.current.world(60.0, 0.0)
     assert (w.vx, w.vy) == (0.0, 0.0)
     assert not w.dead
 
@@ -100,7 +139,7 @@ def test_simulation_is_deterministic():
     charges = [Charge.ATTRACT] * 300 + [Charge.NEUTRAL] * 120 + [Charge.REPEL] * 180
 
     def trace():
-        w = make_world(gravity_y=900.0, height=1e6)
+        w = lab_world(gravity=900.0)
         out = []
         for c in charges:
             w.step(c)
@@ -112,7 +151,7 @@ def test_simulation_is_deterministic():
 
 def test_orbit_stays_bounded_for_ten_seconds():
     node = Node(400.0, 400.0, 400.0, 5.0)
-    w = make_world(nodes=[node])
+    w = lab_world(nodes=[node])
     # Circular orbit for F = k*r needs v = r*sqrt(k); r = 100 here.
     w.vy = 100.0 * math.sqrt(8.0)
     distances = []
@@ -125,14 +164,14 @@ def test_orbit_stays_bounded_for_ten_seconds():
 
 
 def test_fall_speed_is_clamped():
-    w = make_world(gravity_y=10000.0, nodes=[], height=1e6, fall_speed_max=50.0)
+    w = lab_world(gravity=10000.0, nodes=[], fall_speed_max=50.0)
     for _ in range(240):
         w.step(Charge.NEUTRAL)
     assert w.vy <= 50.0 + 1e-9
 
 
 def test_horizontal_speed_is_clamped_independently():
-    w = make_world(gravity_y=0.0, nodes=[], height=1e6, speed_max=50.0)
+    w = lab_world(gravity=0.0, nodes=[], speed_max=50.0)
     w.vx = 5000.0
     w.step(Charge.NEUTRAL)
     assert abs(w.vx) <= 50.0 + 1e-9
@@ -146,7 +185,7 @@ def test_gravity_never_taxes_horizontal_carry():
     gravity buys its downward velocity with the player's horizontal velocity:
     launched flat at the cap, vx bled from 600 to 439 in one second while |v|
     sat pinned at 600. Horizontal carry must now be untouchable by gravity."""
-    w = make_world(gravity_y=500.0, nodes=[], height=1e6,
+    w = lab_world(gravity=500.0, nodes=[],
                    speed_max=600.0, fall_speed_max=600.0)
     w.vx = 600.0
     for _ in range(240):  # one second of falling
@@ -158,16 +197,21 @@ def test_gravity_never_taxes_horizontal_carry():
 def test_upward_speed_is_not_capped_by_the_fall_limit():
     """A slingshot must be allowed to fling the player upward faster than
     terminal fall speed, or the launch the whole game is built on gets blunted."""
-    w = make_world(gravity_y=0.0, nodes=[], height=1e6, fall_speed_max=50.0)
+    w = lab_world(gravity=0.0, nodes=[], fall_speed_max=50.0)
     w.vy = -900.0
     w.step(Charge.NEUTRAL)
     assert w.vy == pytest.approx(-900.0)
 
 
 def test_latch_survives_leaving_the_influence_radius():
-    """The rope does not snap at the rim — it holds until the player lets go."""
+    """This is a SPRING test: the spring rope does not snap at the rim — it
+    holds until the player lets go, stretching past the ring on `F = k*r`. A
+    rigid rope has no such property to test — its radius cannot grow past the
+    rim in the first place (design doc §3, point 3) — so this exercises
+    `lab_world`'s spring default (`rigid_rope=False`) on purpose, not the
+    shipped default."""
     node = Node(400.0, 400.0, 150.0, 5.0)
-    w = make_world(nodes=[node], height=1e6)
+    w = lab_world(nodes=[node])
     # Orbits under F = k*r are bound, with far semi-axis v/sqrt(k). At k=8
     # that needs v > 150*sqrt(8) = 424 px/s to reach past a 150px ring at all.
     w.vy = -800.0
@@ -184,7 +228,7 @@ def test_latch_survives_leaving_the_influence_radius():
 
 def test_releasing_drops_the_latch():
     node = Node(400.0, 400.0, 150.0, 5.0)
-    w = make_world(nodes=[node], height=1e6)
+    w = lab_world(nodes=[node])
     w.vy = -800.0
     for _ in range(240):
         w.step(Charge.ATTRACT)
@@ -197,7 +241,7 @@ def test_latch_does_not_hand_off_to_a_nearer_node_while_held():
     """Flying into another node's ring must not steal the rope."""
     first = Node(300.0, 400.0, 120.0, 5.0)
     second = Node(900.0, 400.0, 400.0, 5.0)
-    w = make_world(spawn=(300.0, 350.0), nodes=[first, second])
+    w = lab_world(spawn=(300.0, 350.0), nodes=[first, second])
     # Fast enough that the bound orbit around `first` reaches x=618, well
     # inside the second ring, which starts at x=500.
     w.vx = 900.0
@@ -215,7 +259,7 @@ def test_latch_does_not_hand_off_to_a_nearer_node_while_held():
 def test_latch_forms_on_entry_when_the_charge_is_already_held():
     """Holding attract before reaching a node still grabs the first one met."""
     node = Node(400.0, 400.0, 100.0, 5.0)
-    w = make_world(spawn=(400.0, 100.0), nodes=[node], height=1e6)
+    w = lab_world(spawn=(400.0, 100.0), nodes=[node])
     assert w.active_node() is None
     w.step(Charge.ATTRACT)
     assert w.latched_node() is None, "nothing in reach yet"
@@ -235,7 +279,7 @@ def test_a_push_breaks_at_the_rim_where_a_pull_holds():
 
     def fly(charge):
         # Spawn inside the ring, or no rope can form in the first place.
-        w = make_world(spawn=(400.0, 350.0), nodes=[node], height=1e6)
+        w = lab_world(spawn=(400.0, 350.0), nodes=[node])
         w.vy = -600.0  # heading away, straight out through the top of the ring
         for _ in range(120):
             w.step(charge)
@@ -252,7 +296,7 @@ def test_a_broken_push_never_drags_the_player_back_in():
     there is nothing to invert, but k_repel*(R - r) going negative past the rim
     was a real bug, so the outcome it produced stays asserted."""
     node = Node(400.0, 400.0, 100.0, 5.0)
-    w = make_world(spawn=(400.0, 350.0), nodes=[node], height=1e6)
+    w = lab_world(spawn=(400.0, 350.0), nodes=[node])
     w.vy = -600.0
     for _ in range(120):
         w.step(Charge.REPEL)
@@ -263,8 +307,7 @@ def test_a_broken_push_regrabs_on_re_entry_without_being_released():
     """Breaking at the rim must not require letting go to use the node again —
     holding push through an arc that falls back into the ring re-connects."""
     node = Node(400.0, 400.0, 100.0, 5.0)
-    w = make_world(spawn=(400.0, 350.0), nodes=[node], gravity_y=2000.0,
-                   height=1e6)
+    w = lab_world(spawn=(400.0, 350.0), nodes=[node], gravity=2000.0)
     w.vy = -600.0
     broke = False
     for _ in range(240):
@@ -283,7 +326,7 @@ def test_a_push_does_not_break_while_still_inside_the_ring():
     """Only leaving the ring breaks it — a push that fizzles out near the rim
     while still inside keeps its rope."""
     node = Node(400.0, 400.0, 250.0, 5.0)
-    w = make_world(spawn=(400.0, 300.0), nodes=[node], height=1e6)
+    w = lab_world(spawn=(400.0, 300.0), nodes=[node])
     for _ in range(60):
         w.step(Charge.REPEL)
         assert math.hypot(w.x - node.x, w.y - node.y) <= node.radius
@@ -292,30 +335,31 @@ def test_a_push_does_not_break_while_still_inside_the_ring():
 
 def test_reset_clears_the_latch():
     node = Node(400.0, 400.0, 250.0, 18.0)
-    w = make_world(nodes=[node])
+    w = lab_world(nodes=[node])
     w.step(Charge.ATTRACT)
     assert w.latched_node() is node
     w.reset()
     assert w.latched_node() is None
 
 
-def test_latch_survives_the_node_being_dragged_by_the_editor():
+def test_latch_survives_the_node_being_moved_by_the_editor():
     """The editor replaces a Node in place while the player may be latched to
     it; the rope must follow the node, not a stale copy."""
-    w = make_world(nodes=[Node(400.0, 400.0, 250.0, 18.0)])
+    w = lab_world(nodes=[Node(400.0, 400.0, 250.0, 18.0)])
     w.step(Charge.ATTRACT)
-    assert w.latched_node() is w.room.nodes[0]
-    w.room.nodes[0] = Node(500.0, 300.0, 250.0, 18.0)
+    assert w.latched_node() is w.chain.current.nodes[0]
+    w.chain.chambers[0] = replace(w.chain.chambers[0],
+                                  nodes=(Node(500.0, 300.0, 250.0, 18.0),))
     w.step(Charge.ATTRACT)
-    assert w.latched_node() is w.room.nodes[0]
+    assert w.latched_node() is w.chain.current.nodes[0]
     assert (w.latched_node().x, w.latched_node().y) == (500.0, 300.0)
 
 
 def test_latch_clears_when_the_node_is_deleted():
-    w = make_world(nodes=[Node(400.0, 400.0, 250.0, 18.0)])
+    w = lab_world(nodes=[Node(400.0, 400.0, 250.0, 18.0)])
     w.step(Charge.ATTRACT)
     assert w.latched_node() is not None
-    w.room.nodes.clear()
+    w.chain.chambers[0] = replace(w.chain.chambers[0], nodes=())
     w.step(Charge.ATTRACT)
     assert w.latched_node() is None
 
@@ -325,3 +369,843 @@ def test_charge_from_input_maps_all_four_combinations():
     assert charge_from_input(False, True) is Charge.REPEL
     assert charge_from_input(False, False) is Charge.NEUTRAL
     assert charge_from_input(True, True) is Charge.NEUTRAL
+
+
+# --- slice 2: gravity-relative clamps and the chamber chain ---------------
+
+def test_clamp_reduces_to_slice_one_at_phi_zero():
+    """Spec section 6: the gravity-relative clamp is a strict generalisation
+    of slice 1's per-axis split, so at phi = 0 it must do exactly that."""
+    w = make_world()
+    w.vx, w.vy = 5000.0, 5000.0
+    w.step(Charge.NEUTRAL)
+    assert w.vx == pytest.approx(600.0)
+    assert w.vy == pytest.approx(600.0)
+
+
+def test_upward_speed_is_never_capped():
+    w = make_world()
+    w.vy = -5000.0
+    w.step(Charge.NEUTRAL)
+    assert w.vy < -4000.0
+
+
+@pytest.mark.parametrize("turns", [0, 1, 2, 3])
+def test_gravity_never_taxes_carry_at_any_orientation(turns):
+    """The slice 1 finding, re-run rotated. An isotropic clamp bled carry from
+    600 to 439 in one second while |v| sat pinned at the cap; the split clamp
+    must leave carry untouched no matter which way gravity points."""
+    w = make_world(flip_duration=0.0, chamber_params=WIDE)
+    w.gravity_state.flip_by(turns)
+    gx, gy = w.gravity_state.direction()
+    px, py = gy, -gx
+    w.vx, w.vy = px * 600.0, py * 600.0
+    for _ in range(240):
+        w.step(Charge.NEUTRAL)
+        if w.dead:
+            break
+    carry = w.vx * px + w.vy * py
+    assert carry == pytest.approx(600.0, abs=1.0)
+
+
+def test_crossing_the_arrow_advances_and_turns_gravity():
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    turn = ch.turn
+    w.x, w.y = ch.world(ch.params.depth - 1.0, 0.0)
+    w.vx, w.vy = ch.direction[0] * 600.0, ch.direction[1] * 600.0
+    for _ in range(10):
+        w.step(Charge.NEUTRAL)
+        if w.chain.at == 1:
+            break
+    assert w.chain.at == 1
+    assert not w.dead
+    assert w.gravity_state.target_turns == -turn      # spec 3.3's sign trap
+    assert w.gravity_state.direction() == pytest.approx(w.chain.current.direction, abs=1e-9)
+
+
+def _seek_chamber(w, turning: bool):
+    """Walk the chain to the next chamber that does (or does not) turn.
+
+    Which chambers turn is a property of the run's cadence now, so a test that
+    wants one of each has to go and find them rather than assume chamber 0.
+    """
+    for _ in range(80):
+        if (w.chain.current.turn != 0) == turning:
+            return w.chain.current
+        w.chain.advance()
+    raise AssertionError(f"no chamber with turning={turning} in 80")
+
+
+def test_entry_lateral_offset_is_zero_at_a_turn():
+    """Spec 4.3: at a turn the old lateral axis becomes the new depth axis, so
+    where you crossed becomes how deep you start — and offset is exactly
+    zero."""
+    for u in (-300.0, -50.0, 0.0, 120.0, 400.0):
+        w = make_world(flip_duration=0.0)
+        ch = _seek_chamber(w, turning=True)
+        start = w.chain.at
+        w.x, w.y = ch.world(ch.params.depth - 1.0, u)
+        w.vx, w.vy = ch.direction[0] * 600.0, ch.direction[1] * 600.0
+        for _ in range(10):
+            w.step(Charge.NEUTRAL)
+            if w.chain.at > start:
+                break
+        assert not w.dead, u
+        _, offset = w.chain.current.local(w.x, w.y)
+        assert offset == pytest.approx(0.0, abs=1e-9), u
+
+
+def test_a_straight_seam_carries_the_offset_through():
+    """A chamber that does not turn is a corridor that keeps going, so crossing
+    its seam must not shunt the player back onto the centre line. 4.3's
+    zero-offset guarantee is a property of TURNS specifically — which is also
+    why the lane-clearance guarantee matters most at a turn, where every player
+    arrives on the centre line."""
+    for u in (-300.0, 120.0):
+        w = make_world(flip_duration=0.0)
+        ch = _seek_chamber(w, turning=False)
+        start = w.chain.at
+        w.x, w.y = ch.world(ch.params.depth - 1.0, u)
+        w.vx, w.vy = ch.direction[0] * 600.0, ch.direction[1] * 600.0
+        for _ in range(10):
+            w.step(Charge.NEUTRAL)
+            if w.chain.at > start:
+                break
+        assert w.chain.at > start, u
+        assert not w.dead, u
+        _, offset = w.chain.current.local(w.x, w.y)
+        assert offset == pytest.approx(u, abs=1e-9), u
+
+
+def test_crossing_outside_the_span_kills():
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(ch.params.depth - 1.0, ch.params.half_width + 5.0)
+    w.vx, w.vy = ch.direction[0] * 600.0, ch.direction[1] * 600.0
+    for _ in range(10):
+        w.step(Charge.NEUTRAL)
+    assert w.dead
+    assert w.chain.at == 0
+
+
+def test_leaving_the_chamber_sideways_kills():
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 0.0)
+    px, py = ch.perp
+    w.vx, w.vy = px * 600.0, py * 600.0
+    for _ in range(600):
+        w.step(Charge.NEUTRAL)
+        if w.dead:
+            break
+    assert w.dead
+
+
+def test_being_thrown_back_out_of_the_entrance_kills():
+    w = make_world(flip_duration=0.0, gravity=0.0)
+    ch = w.chain.current
+    w.vx, w.vy = -ch.direction[0] * 600.0, -ch.direction[1] * 600.0
+    for _ in range(600):
+        w.step(Charge.NEUTRAL)
+        if w.dead:
+            break
+    assert w.dead
+
+
+def test_core_contact_kills_in_a_neighbouring_chamber_too():
+    """Rings and cores reach across the seam, so the chamber next door is
+    lethal while you are still in this one.
+
+    The node is planted just past the seam deliberately. Dropping the player
+    onto a generated node of the next chamber instead put them a whole chamber
+    depth beyond the arrow, where they died of leaving the corridor — the
+    assertion passed without a core ever being touched.
+    """
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    just_past = ch.world(ch.params.depth + 5.0, 0.0)
+    w.chain.chambers[1] = replace(
+        w.chain.by_index(1),
+        nodes=(Node(just_past[0], just_past[1], 200.0, 18.0),))
+
+    w.x, w.y = ch.world(ch.params.depth - 10.0, 0.0)
+    w.vx = w.vy = 0.0
+    w.step(Charge.NEUTRAL)
+
+    assert w.chain.at == 0, "must still be in this chamber, not through the arrow"
+    assert w.dead
+
+
+def test_distance_accumulates_along_the_actual_path():
+    w = make_world()
+    start = (w.x, w.y)
+    for _ in range(240):
+        w.step(Charge.NEUTRAL)
+    assert w.distance > math.dist(start, (w.x, w.y)) * 0.99
+    assert w.distance > 0.0
+
+
+def test_clearing_chambers_counts_and_retains_outlines():
+    """The run must retain chamber geometry rather than discarding it behind
+    the camera — the end-of-run path map draws the whole route."""
+    w = make_world(flip_duration=0.0)
+    for _ in range(3):
+        ch = w.chain.current
+        w.x, w.y = ch.world(ch.params.depth - 1.0, 0.0)
+        w.vx, w.vy = ch.direction[0] * 600.0, ch.direction[1] * 600.0
+        for _ in range(10):
+            w.step(Charge.NEUTRAL)
+            if w.chain.current is not ch:
+                break
+    assert not w.dead
+    assert w.cleared == 3
+    assert len(w.chain.outlines) == 3
+
+
+def test_reset_settles_gravity_onto_the_chamber_and_never_opens_mid_flip():
+    w = make_world()
+    w.gravity_state.flip_by(1)
+    assert not w.gravity_state.settled
+    w.reset()
+    assert w.gravity_state.settled
+    assert w.gravity_state.direction() == pytest.approx(w.chain.current.direction, abs=1e-9)
+
+
+def test_crossing_a_looping_chamber_puts_the_player_back_at_its_entrance():
+    """Lab mode: the chain hands back a chamber whose entry is not where the
+    last one ended, and the player must arrive at that entry. In the corridor
+    the two coincide, so this rule is a no-op there."""
+    from gravi.field import Node
+    from gravi.room import LabChain, Room
+
+    room = Room(spawn=(100.0, 60.0), nodes=[Node(400.0, 300.0, 40.0, 4.0)],
+                width=1280.0, height=720.0)
+    w = World(
+        chain=LabChain(room),
+        params=PARAMS,
+        gravity=500.0,
+        gravity_state=GravityState(flip_duration=0.0),
+        player_radius=7.0,
+        speed_max=600.0,
+        fall_speed_max=600.0,
+    )
+    w.x, w.y = 640.0, 719.0
+    w.vx, w.vy = 0.0, 600.0
+    for _ in range(10):
+        w.step(Charge.NEUTRAL)
+        if w.cleared:
+            break
+    assert w.cleared == 1
+    assert not w.dead
+    t, _ = w.chain.current.local(w.x, w.y)
+    assert t == pytest.approx(0.0, abs=1e-9)      # back at the entrance line
+    assert w.gravity_state.target_turns == 0      # and gravity never turned
+
+
+def test_a_rigid_rope_is_uniform_circular_motion():
+    """A rope does no work. With gravity off, that means radius AND speed both
+    hold — which is the property that separates a constraint from a force."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    w.vx, w.vy = 0.0, 260.0
+
+    radii, speeds = [], []
+    for _ in range(2400):                      # ten seconds
+        w.step(Charge.ATTRACT)
+        assert not w.dead
+        radii.append(math.hypot(w.x - node.x, w.y - node.y))
+        speeds.append(math.hypot(w.vx, w.vy))
+
+    assert max(radii) - min(radii) < 1e-6, (min(radii), max(radii))
+    assert max(speeds) - min(speeds) < 1e-6, (min(speeds), max(speeds))
+    assert radii[0] == pytest.approx(100.0)
+
+
+def test_a_rigid_rope_at_the_nodes_exact_centre_does_not_crash():
+    """Finding 1: grabbing a rigid rope exactly at the node's centre gives
+    _rope_radius == 0, and _rotate_on_rope divides by it (dx / r, dy / r).
+    The player would die on core contact at that position anyway (distance 0
+    is inside any node's lethal core), but a crash is not an acceptable way
+    to get there."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(400.0, 400.0))
+    w.rigid_rope = True
+    w.vx, w.vy = 10.0, 0.0
+
+    w.step(Charge.ATTRACT)          # must not raise ZeroDivisionError
+
+    assert w.dead   # exactly at the centre is inside the node's lethal core
+
+
+def test_a_rigid_rope_at_a_near_zero_radius_does_not_alias():
+    """A radius that is not exactly zero but close (~1e-6) is nearly as bad:
+    theta = (speed / r) * dt balloons to somewhere around 1e6 rad/step, and
+    cos/sin of that alias the position to an effectively arbitrary point on
+    the circle rather than raising. Below the guard epsilon the rope must be
+    inert for that step -- position and velocity carry over unchanged --
+    rather than rotate by a meaningless theta.
+
+    core_radius and player_radius are pinned to 0 here so the death check
+    does not short-circuit the observation; this test is about the rope math,
+    not the core."""
+    node = Node(400.0, 400.0, 400.0, 0.0)
+    spawn = (400.0 + 1e-6, 400.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=spawn)
+    w.player_radius = 0.0
+    w.rigid_rope = True
+    w.vx, w.vy = 10.0, 0.0
+
+    w.step(Charge.ATTRACT)          # must not raise, must not alias
+
+    assert not w.dead
+    assert (w.x, w.y) == spawn
+    assert (w.vx, w.vy) == pytest.approx((10.0, 0.0))
+
+
+def test_a_rigid_rope_strips_the_radial_velocity():
+    """The previous version of this test placed the node on the x-axis with a
+    purely radial velocity (200, 0) -- vy was 0 both before and after the
+    strip, so a sign error in `radial = vx*ux - vy*uy` would have passed
+    unnoticed (0 == 0 either way). This version uses an off-axis 80-60-100
+    triangle so the radial and tangential components are both nonzero and
+    different.
+
+    Player sits at node + (-80, -60), so the radial unit vector is
+    u = (-0.8, -0.6) and its perpendicular (same handedness as chamber.perp,
+    perp(u) = (-uy, ux)) is t = (0.6, -0.8). Composing
+    velocity = 150 * u + 80 * t:
+        vx = 150*(-0.8) + 80*(0.6)  = -72
+        vy = 150*(-0.6) + 80*(-0.8) = -154
+    with speed sqrt(150**2 + 80**2) == 170, confirmed independently by
+    sqrt(72**2 + 154**2) == 170. Stripping the 150 px/s radial part must
+    leave exactly the 80 px/s tangential part -- checked both by the radial
+    projection going to ~0 and by the surviving speed matching 80 exactly
+    (rotation about the node preserves speed, so no further tolerance is
+    needed there)."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(320.0, 340.0))
+    w.rigid_rope = True
+    w.vx, w.vy = -72.0, -154.0
+
+    w.step(Charge.ATTRACT)
+
+    dx, dy = w.x - node.x, w.y - node.y
+    distance = math.hypot(dx, dy)
+    radial = (w.vx * dx + w.vy * dy) / distance
+    assert radial == pytest.approx(0.0, abs=1e-9)
+    assert math.hypot(w.vx, w.vy) == pytest.approx(80.0)
+
+
+def test_releasing_a_rigid_rope_restores_free_flight():
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    w.vx, w.vy = 0.0, 260.0
+    for _ in range(120):
+        w.step(Charge.ATTRACT)
+    held = math.hypot(w.x - node.x, w.y - node.y)
+
+    for _ in range(120):
+        w.step(Charge.NEUTRAL)
+
+    assert math.hypot(w.x - node.x, w.y - node.y) > held + 50.0
+
+
+def test_a_rigid_rope_does_not_apply_to_a_repel():
+    """A repel is a push, not an attachment."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    start = math.hypot(w.x - node.x, w.y - node.y)
+
+    for _ in range(120):
+        w.step(Charge.REPEL)
+
+    assert math.hypot(w.x - node.x, w.y - node.y) > start + 10.0
+
+
+def test_a_rigid_rope_under_along_still_swings_the_pendulum():
+    """Gravity is a force, so it must still visibly swing a pendulum held on
+    a rigid rope.
+
+    Player starts at rest level with the node (300, 400) vs node (400, 400),
+    so the released height above the bottom of the swing equals the radius,
+    100 px. Energy conservation on a rope that does no work puts the peak
+    speed, reached at the bottom of the swing, at sqrt(2 * g * r):
+        sqrt(2 * 500 * 100) ~= 316.2 px/s
+    A speed that never moved off ~0 would mean gravity was being silently
+    swallowed by the rope; asserting a wide swing range makes this
+    non-vacuous."""
+    node = Node(400.0, 400.0, 400.0, 5.0)
+    w = lab_world(gravity=500.0, nodes=[node], spawn=(300.0, 400.0))
+    w.rigid_rope = True
+    w.vx, w.vy = 0.0, 0.0             # released from rest
+
+    speeds = []
+    for _ in range(2000):             # a bit over eight seconds: several swings
+        w.step(Charge.ATTRACT)
+        assert not w.dead
+        speeds.append(math.hypot(w.vx, w.vy))
+        assert math.hypot(w.x - node.x, w.y - node.y) == pytest.approx(100.0, abs=1e-3)
+
+    assert max(speeds) - min(speeds) > 200.0, (min(speeds), max(speeds))
+    assert max(speeds) == pytest.approx(316.2, rel=0.05)
+
+
+def test_a_gravity_swap_leaves_the_velocity_alone():
+    """Already true, and pinned here because nothing asserted it: crossing an
+    arrow changes the FIELD, never the player's velocity vector. It reads like
+    a bug to someone tidying up later."""
+    w = make_world(flip_duration=0.0)
+    ch = _seek_chamber(w, turning=True)
+    start = w.chain.at
+    w.x, w.y = ch.world(ch.params.depth - 1.0, 40.0)
+    w.vx = ch.direction[0] * 500.0 + ch.perp[0] * 220.0
+    w.vy = ch.direction[1] * 500.0 + ch.perp[1] * 220.0
+    before = (w.vx, w.vy)
+    before_gravity = w.gravity_state.direction()
+
+    for _ in range(10):
+        w.step(Charge.NEUTRAL)
+        if w.chain.at > start:
+            break
+
+    assert w.chain.at > start, "the test needs an actual crossing"
+    # One step of gravity is all that may have changed it, and only along the
+    # OLD gravity axis — the vector is never rotated with the field.
+    gx, gy = before_gravity
+    step = 500.0 / 240.0
+    assert w.vx == pytest.approx(before[0] + gx * step, abs=1e-6)
+    assert w.vy == pytest.approx(before[1] + gy * step, abs=1e-6)
+
+
+def test_world_defaults_to_the_rigid_rope():
+    """The 2026-08-20 playtest picked the rigid rope over the spring, and
+    that verdict is now the shipped default: a `World` built with no
+    `rigid_rope` argument at all must come out rigid. `make_world`/
+    `lab_world` above deliberately override this back to the spring for the
+    slice 1 regressions — this test is the one place in the suite that
+    exercises World's own bare default, unshadowed by that harness."""
+    w = World(
+        chain=chain_with([]),
+        params=PARAMS,
+        gravity_state=GravityState(flip_duration=0.3),
+        gravity=500.0,
+        player_radius=7.0,
+        speed_max=600.0,
+    )
+    assert w.rigid_rope is True
+
+
+def test_repel_pushes_off_the_nearer_wall_when_no_node_is_in_reach():
+    """The whole point: a corridor always has a wall, so there is no longer a
+    position in the game with no verb available."""
+    w = make_world(flip_duration=0.0)          # chamber 0 has no nodes
+    ch = w.chain.current
+    px, py = ch.perp
+    w.x, w.y = ch.world(400.0, 380.0)          # 80 from the +u wall
+    w.vx = w.vy = 0.0
+
+    for _ in range(30):
+        w.step(Charge.REPEL)
+
+    lateral = w.vx * px + w.vy * py
+    assert lateral < -1.0, "must be pushed back toward the centre lane"
+
+
+def test_a_wall_out_of_reach_does_nothing():
+    w = make_world(flip_duration=0.0, wall_reach=100.0)
+    ch = w.chain.current
+    px, py = ch.perp
+    w.x, w.y = ch.world(400.0, 0.0)            # 460 from either wall
+    w.vx = w.vy = 0.0
+
+    for _ in range(30):
+        w.step(Charge.REPEL)
+
+    lateral = w.vx * px + w.vy * py
+    assert lateral == pytest.approx(0.0, abs=1e-9)
+
+
+def test_a_wall_in_reach_wins_over_a_node():
+    """Walls take priority over nodes for a push (reversed 2026-08-23). A push
+    goes off the wall, and off a node only when no wall is near — so the
+    emergency out is the same gesture everywhere, since a corridor always has
+    a wall. Still exactly one of the two, never both summed."""
+    # gravity=0 so the only thing moving the player is the push. Gravity acts
+    # along the corridor, i.e. on the very axis this test uses to detect a
+    # stray node force — the previous version of this test asserted
+    # t_component > 0 and was partly measuring gravity rather than the node.
+    w = make_world(flip_duration=0.0, gravity=0.0)
+    ch = w.chain.current
+    here = ch.world(400.0, 380.0)
+    near = ch.world(300.0, 380.0)              # 100 back along the corridor
+    w.chain.chambers[0] = replace(
+        w.chain.chambers[0],
+        nodes=(Node(near[0], near[1], 300.0, 10.0),))
+    w.x, w.y = here
+    w.vx = w.vy = 0.0
+
+    w.step(Charge.REPEL)
+
+    # The node sits BEHIND the player along the corridor, so a node push moves
+    # them along +t. The wall is beside them, so a wall push moves them across,
+    # along -u. Exactly one of those may happen, and now it is the wall: the
+    # player is at u = 380 with wall_reach = 260 and half_width = 460, so the
+    # wall is 80 away and well within reach.
+    #
+    # Both components are checked deliberately. The lateral (u) component alone
+    # cannot distinguish "the wall won" from "the wall and the node both
+    # fired", because a correct wall-only push has zero t component by
+    # construction here.
+    px, py = ch.perp
+    t_component = w.vx * ch.direction[0] + w.vy * ch.direction[1]
+    u_component = w.vx * px + w.vy * py
+    assert u_component < 0.0, "the wall, not the node, must be pushing"
+    assert t_component == pytest.approx(0.0, abs=1e-6), (
+        "a node force must not stack on top of the wall force")
+
+
+def test_a_player_crossing_a_turn_can_save_themselves_on_a_wall():
+    """The death this whole design exists to remove. Cross a turn at full
+    speed with nothing to grab, hold repel, and the trajectory must change
+    before the wall arrives.
+
+    The window has to run well past the natural crossing time and the check
+    has to be something a drag implementation cannot satisfy. A magnitude
+    decrease alone is satisfiable by drag: an isotropic `ax -= k*vx` gated on
+    the same `distance < wall_reach` check (no directional push at all) also
+    shrinks the lateral speed inside a short window, and shrinks it FASTER
+    than the real push does -- 600 -> 223 for drag versus 600 -> 505 for the
+    real push over the first 120 steps (0.5 s) -- so a 0.5 s window asserting
+    only `abs(after) < abs(before)` cannot tell a save from mere friction.
+    Drag is not a save: it never reverses the player's direction of travel,
+    it only slows the drift into the wall down. The real directional push
+    does reverse it, but only after the player has had time to travel back
+    off the wall, which this design doc measured at ~0.77 s. So the window
+    here runs to 290 steps (~1.2 s, safely past that crossing) and the
+    assertion is that the lateral velocity changes SIGN -- the player is
+    actually retreating from the wall, not just approaching it more slowly.
+    The original magnitude assertion is kept too, since it still holds over
+    this longer window (600 -> ~596, just barely, right before the fully
+    reversed velocity re-saturates the carry-speed clamp).
+    """
+    w = make_world(flip_duration=0.0)
+    ch = _seek_chamber(w, turning=True)
+    start = w.chain.at
+    w.x, w.y = ch.world(ch.params.depth - 2.0, 0.0)
+    w.vx = ch.direction[0] * 600.0
+    w.vy = ch.direction[1] * 600.0
+    for _ in range(20):
+        w.step(Charge.NEUTRAL)
+        if w.chain.at > start:
+            break
+    assert w.chain.at > start, "the test needs an actual crossing"
+
+    nxt = w.chain.current
+    # Strip the node field so the wall really is the only thing available.
+    # chambers[0].index is the oldest retained chamber, which is how you turn a
+    # chamber index into a list position without touching a private attribute.
+    w.chain.chambers[w.chain.at - w.chain.chambers[0].index] = replace(
+        nxt, nodes=())
+    nxt = w.chain.current
+    px, py = nxt.perp
+    before = w.vx * px + w.vy * py
+
+    for _ in range(290):                        # ~1.2 seconds
+        w.step(Charge.REPEL)
+        if w.dead:
+            break
+
+    assert not w.dead, "the wall push exists so this crossing survives"
+    after = w.vx * px + w.vy * py
+    assert abs(after) < abs(before), (
+        f"repel must bleed off the lateral rush: {before} -> {after}")
+    assert before * after < 0.0, (
+        "the lateral velocity must change sign -- the player must actually "
+        f"be retreating from the wall, not merely approaching it more "
+        f"slowly (which drag alone can also achieve): {before} -> {after}")
+
+
+def test_crossing_into_wall_reach_reverses_the_push():
+    """Pins the force discontinuity created by giving walls priority over
+    nodes (2026-08-23). This is NOT a bug to quietly fix -- it is a known
+    playtest risk, and this test exists so nobody "cleans up" the priority
+    rule without knowing what they are changing.
+
+    Before the reversal the handoff sat at a node's rim, where node repel is
+    zero by construction, so the jump was 0 -> 3900 in magnitude only. Giving
+    walls priority moves the handoff to the wall_reach boundary, where BOTH
+    forces are live -- and they point in opposite directions, because a node
+    at the centre lane pushes you outward while the wall pushes you inward.
+
+    Measured with the shipped constants (k_repel=15, wall_reach=260,
+    half_width=460, a node at u=0 with radius 300), across u=200:
+
+        u=190   wall 270 away, out of reach   node pushes OUTWARD at 1650
+        u=210   wall 250 away, in reach       wall pushes INWARD  at  150
+
+    So twenty units of drift flips the push through 180 degrees and drops it
+    to a ninth of its magnitude. Whether that reads as "the wall took over"
+    or as the controls inverting under you is a question for the playtest --
+    see design doc section 10.
+    """
+    shipped = FieldParams(k_attract=8.0, k_repel=15.0, force_max=4500.0)
+    radius = 300.0
+
+    w = make_world(nodes=[Node(0.0, 0.0, radius=radius, core_radius=10.0)],
+                   flip_duration=0.0, gravity=0.0, wall_reach=260.0)
+    w.params = shipped
+    ch = w.chain.current
+    px, py = ch.perp
+    node_x, node_y = ch.world(400.0, 0.0)
+    w.chain.chambers[0] = replace(
+        w.chain.chambers[0],
+        nodes=(Node(node_x, node_y, radius=radius, core_radius=10.0),))
+
+    # Just outside wall reach: the node is what is left, and it pushes OUT.
+    w.x, w.y = ch.world(400.0, 190.0)
+    w.vx = w.vy = 0.0
+    w.step(Charge.REPEL)
+    outward = (w.vx * px + w.vy * py) / w.dt
+    assert outward == pytest.approx(1650.0, abs=1.0), (
+        f"expected the measured 1650 node push outward, got {outward}")
+
+    # Twenty units further out, inside wall reach: the wall wins and pushes IN.
+    w.x, w.y = ch.world(400.0, 210.0)
+    w.vx = w.vy = 0.0
+    w.repel_charges = w.repel_charges_max
+    w._press_paid = None
+    w.step(Charge.REPEL)
+    inward = (w.vx * px + w.vy * py) / w.dt
+    assert inward == pytest.approx(-150.0, abs=1.0), (
+        f"expected the measured 150 wall push inward, got {inward}")
+
+    assert outward * inward < 0.0, "the push must have reversed direction"
+
+
+def test_a_press_in_open_space_is_free():
+    """The player is allowed to be wrong about whether anything was in reach."""
+    w = make_world(flip_duration=0.0, wall_reach=10.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 0.0)
+    before = w.repel_charges
+    for _ in range(60):
+        w.step(Charge.REPEL)
+    assert w.repel_charges == pytest.approx(before)
+
+
+def test_a_push_drains_the_tank():
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 380.0)
+    before = w.repel_charges
+    for _ in range(60):                          # a quarter second of pushing
+        w.step(Charge.REPEL)
+    assert w.repel_charges < before
+
+
+def test_a_node_repel_also_drains_the_tank():
+    """Design doc §4: 'The cost applies to every repel, against a node or a
+    wall — it is the verb that costs, not the target.' Every other charge
+    test in this file pushes against the WALL fallback (spawned 80 px from
+    the corridor wall, with no nodes); this one puts a node in range and
+    holds repel inside its ring, so the node branch of the cost is actually
+    exercised at least once."""
+    node = Node(400.0, 400.0, 250.0, 18.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    assert w.active_node() is node, "test setup must actually be inside the ring"
+    before = w.repel_charges
+    for _ in range(60):
+        w.step(Charge.REPEL)
+    assert w.repel_charges < before
+
+
+def test_holding_attract_never_decreases_charges_regardless_of_node_state():
+    """The only thing enforcing 'attract costs nothing' (design doc §4) is
+    one `if charge is Charge.REPEL` gate in step() — pin the invariant
+    directly, both with a node latched and with no node in reach at all."""
+    node = Node(400.0, 400.0, 250.0, 18.0)
+    for nodes in ([node], []):
+        w = lab_world(gravity=500.0, nodes=nodes, spawn=(300.0, 400.0))
+        w.repel_charges = 1.0
+        previous = w.repel_charges
+        for _ in range(600):
+            w.step(Charge.ATTRACT)
+            assert w.repel_charges >= previous - 1e-12
+            previous = w.repel_charges
+        assert not w.dead, "must survive the whole run for the invariant to mean anything"
+
+
+def test_a_tap_costs_at_least_the_floor():
+    """Without the floor, a micro-tap is free and tap-spam replaces hold-spam."""
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 380.0)
+    before = w.repel_charges
+
+    w.step(Charge.REPEL)                         # one frame: 1/240 s
+    w.step(Charge.NEUTRAL)                       # released
+
+    spent = before - w.repel_charges
+    assert spent == pytest.approx(0.5, abs=1e-9)
+
+
+def test_repel_does_not_fire_on_an_empty_tank():
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    px, py = ch.perp
+    w.x, w.y = ch.world(400.0, 380.0)
+    w.repel_charges = 0.0
+    w.vx = w.vy = 0.0
+
+    w.step(Charge.REPEL)
+
+    assert (w.vx * px + w.vy * py) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_the_tank_regenerates_and_caps():
+    """Gravity off and a wide chamber, so the player never dies: reset() refills
+    the tank, and a test that let them die would pass without regen existing."""
+    w = lab_world(gravity=0.0, nodes=[])
+    w.repel_charges = 0.0
+    for _ in range(240 * 30):                    # thirty seconds
+        w.step(Charge.NEUTRAL)
+        assert not w.dead
+    assert w.repel_charges == pytest.approx(w.repel_charges_max)
+
+
+def test_regen_pauses_while_pushing():
+    """Drain and regen must never fight over the same frame, or the cost of a
+    push is quietly refunded as it is paid."""
+    w = make_world(flip_duration=0.0)
+    ch = w.chain.current
+    w.x, w.y = ch.world(400.0, 380.0)
+    w.repel_charges = 2.0
+
+    for _ in range(60):
+        w.step(Charge.REPEL)
+
+    # Floor plus a quarter second of drain, with nothing added back.
+    expected = 2.0 - max(0.5, (60 / 240) / w.repel_charge_seconds)
+    assert w.repel_charges == pytest.approx(expected, abs=1e-6)
+
+
+def test_a_new_attract_latch_pays_a_bonus_once():
+    node = Node(400.0, 400.0, 300.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.repel_charges = 0.0
+
+    w.step(Charge.ATTRACT)
+    after_first = w.repel_charges
+    assert after_first >= w.repel_attach_bonus
+
+    for _ in range(10):
+        w.step(Charge.ATTRACT)
+    # Regen still ticks while attracting, so account for exactly that much —
+    # not just "less than a second full bonus", which would also pass for a
+    # mis-scaled repeat (e.g. a half bonus slipping in on top of regen).
+    expected = after_first + w.repel_regen * w.dt * 10
+    assert w.repel_charges == pytest.approx(expected, abs=1e-6)
+
+
+def test_mashing_attract_while_stationary_pays_the_bonus_once():
+    """Releasing always drops `_latch` (see `_update_latch`), including on
+    every NEUTRAL frame of a stationary mash. The bonus must not key its
+    re-arm off that: tapping ATTRACT on and off while sitting still inside a
+    ring must pay `repel_attach_bonus` exactly once, not once per tap."""
+    node = Node(400.0, 400.0, 300.0, 5.0)
+    spawn = (300.0, 400.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=spawn)
+    w.repel_charges = 0.0
+
+    # A plausible 16 Hz mash: 10 frames held, 5 released, repeated — pinned
+    # in place each frame so the test isolates the bonus accounting from
+    # whatever the spring itself would otherwise do to the position.
+    frames = 0
+    for _cycle in range(50):
+        for _ in range(10):
+            w.step(Charge.ATTRACT)
+            w.x, w.y = spawn
+            w.vx = w.vy = 0.0
+            frames += 1
+        for _ in range(5):
+            w.step(Charge.NEUTRAL)
+            w.x, w.y = spawn
+            w.vx = w.vy = 0.0
+            frames += 1
+
+    # No more than one bonus, plus whatever passive regen ran during those
+    # frames (attract never blocks regen).
+    expected = min(w.repel_charges_max,
+                    w.repel_attach_bonus + w.repel_regen * w.dt * frames)
+    assert w.repel_charges == pytest.approx(expected, abs=1e-6)
+
+
+def test_leaving_the_ring_and_returning_pays_the_bonus_again():
+    """The fix for the mash exploit must not simply disable the bonus:
+    actually leaving the node's ring and coming back is the player doing the
+    work the bonus rewards, and must be paid again."""
+    node = Node(400.0, 400.0, 300.0, 5.0)
+    w = lab_world(gravity=0.0, nodes=[node], spawn=(300.0, 400.0))
+    w.repel_charges = 0.0
+
+    w.step(Charge.ATTRACT)
+    after_first = w.repel_charges
+    assert after_first >= w.repel_attach_bonus
+
+    # Let go and leave the ring entirely (node.radius is 300.0).
+    w.x, w.y = (2000.0, 2000.0)
+    w.vx = w.vy = 0.0
+    w.step(Charge.NEUTRAL)
+
+    # Come back inside the ring and grab again.
+    w.x, w.y = (300.0, 400.0)
+    w.vx = w.vy = 0.0
+    w.step(Charge.ATTRACT)
+
+    assert w.repel_charges >= after_first + w.repel_attach_bonus - 1e-6
+
+
+def test_a_dry_press_recovers_and_can_fire_again_without_releasing():
+    """Design doc 4.1: 'The charge budget must never be the reason the
+    emergency out was unavailable at a flip.' Pin the player at a constant
+    distance from the wall and hold repel long enough to drain the tank dry,
+    then keep holding — never release — for several more seconds. Regen must
+    resume and repel must fire again on its own, or the meter has quietly
+    reintroduced the unlucky death it exists to remove."""
+    w = make_world(flip_duration=0.0, gravity=0.0)
+    ch = w.chain.current
+
+    def pinned_step():
+        # Re-pin position and zero velocity every frame: isolates whether a
+        # push fired THIS frame (nonzero velocity after the step) from any
+        # drift the previous frame's push may have caused.
+        w.x, w.y = ch.world(400.0, 380.0)
+        w.vx = w.vy = 0.0
+        w.step(Charge.REPEL)
+
+    for _ in range(3000):                        # drain the tank dry
+        pinned_step()
+    assert w.repel_charges < w.repel_min_spend, "should be stranded here"
+
+    recovered = False
+    fired_again = False
+    for _ in range(3000):                         # keep holding, never release
+        pinned_step()
+        if w.repel_charges > w.repel_min_spend:
+            recovered = True
+        if math.hypot(w.vx, w.vy) > 0.0:
+            fired_again = True
+
+    assert recovered, "the tank must recover above the floor while still held"
+    assert fired_again, "repel must fire again once the tank recovers"
+
+
+def test_reset_refills_the_tank():
+    w = make_world(flip_duration=0.0)
+    w.repel_charges = 0.0
+    w.reset()
+    assert w.repel_charges == pytest.approx(w.repel_charges_max)

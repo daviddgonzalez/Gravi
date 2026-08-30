@@ -95,14 +95,23 @@ def _glow_sprite(color: tuple[int, int, int], radius: int) -> pygame.Surface:
     return surface
 
 
-def draw_glow(surface: pygame.Surface, x: float, y: float,
-              color: tuple[int, int, int], radius: int) -> None:
+def _glow_at(surface: pygame.Surface, sx: float, sy: float,
+             color: tuple[int, int, int], radius: int) -> None:
+    """Glow at a point already in screen space."""
     sprite = _glow_sprite(color, radius)
-    surface.blit(sprite, (int(x) - radius, int(y) - radius),
+    surface.blit(sprite, (int(sx) - radius, int(sy) - radius),
                  special_flags=pygame.BLEND_ADD)
 
 
-def draw_node(surface: pygame.Surface, node, is_active: bool) -> None:
+def draw_glow(surface: pygame.Surface, x: float, y: float,
+              color: tuple[int, int, int], radius: int, camera) -> None:
+    """`radius` is in PIXELS here, not world units: this is the raw primitive,
+    and its callers already know how big they want the sprite. Anything drawing
+    a world length scales it with camera.scale_length first."""
+    _glow_at(surface, *camera.to_screen(x, y), color, radius)
+
+
+def draw_node(surface: pygame.Surface, node, is_active: bool, camera) -> None:
     """Influence ring at `node.radius`, lethal core at `node.core_radius`.
 
     The ring is drawn straight onto the screen rather than blitted from a
@@ -113,18 +122,28 @@ def draw_node(surface: pygame.Surface, node, is_active: bool) -> None:
     where two rings overlap; at these brightnesses over a near-black field
     the difference is a few units per channel.
     """
+    # Only the centre transforms. Circles are rotation-invariant, which is
+    # why rotating at draw time costs almost nothing here.
+    #
+    # Radii go through camera.scale_length because they are world lengths: the
+    # ring IS the influence radius, so at a widened view a ring left in pixels
+    # would draw a reach the force does not have. The 2px line width does not
+    # scale — that is legibility, not geometry.
+    sx, sy = camera.to_screen(node.x, node.y)
+    radius = max(1, int(camera.scale_length(node.radius)))
+    core = max(1, int(camera.scale_length(node.core_radius)))
     pygame.draw.circle(surface,
                        _scaled(config.COLOR_NODE, (110 if is_active else 40) / 255.0),
-                       (int(node.x), int(node.y)), int(node.radius), width=2)
+                       (int(sx), int(sy)), radius, width=2)
 
-    draw_glow(surface, node.x, node.y, config.COLOR_NODE,
-              int(node.core_radius * (4 if is_active else 3)))
-    pygame.draw.circle(surface, config.COLOR_CORE,
-                       (int(node.x), int(node.y)), int(node.core_radius))
+    _glow_at(surface, sx, sy, config.COLOR_NODE,
+             max(1, core * (4 if is_active else 3)))
+    pygame.draw.circle(surface, config.COLOR_CORE, (int(sx), int(sy)), core)
 
 
 def draw_beam(surface: pygame.Surface, px: float, py: float, node,
-              charge: Charge, force_magnitude: float, force_max: float) -> None:
+              charge: Charge, force_magnitude: float, force_max: float,
+              camera) -> None:
     """Thickness and brightness track force magnitude, so the player reads
     F = k*r off the screen without ever being told it."""
     if charge is Charge.NEUTRAL:
@@ -136,21 +155,70 @@ def draw_beam(surface: pygame.Surface, px: float, py: float, node,
     width = max(1, int(1 + strength * 7))
     tint = _scaled(color, (60 + strength * 195) / 255.0)
 
+    ax, ay = camera.to_screen(px, py)
+    bx, by = camera.to_screen(node.x, node.y)
     pad = width + 2
-    rect = pygame.Rect(int(min(px, node.x)) - pad, int(min(py, node.y)) - pad,
-                       int(abs(node.x - px)) + 2 * pad,
-                       int(abs(node.y - py)) + 2 * pad)
+    rect = pygame.Rect(int(min(ax, bx)) - pad, int(min(ay, by)) - pad,
+                       int(abs(bx - ax)) + 2 * pad,
+                       int(abs(by - ay)) + 2 * pad)
     layer = _scratch_layer(surface.get_size(), rect)
-    pygame.draw.line(layer, tint, (px, py), (node.x, node.y), width)
+    pygame.draw.line(layer, tint, (ax, ay), (bx, by), width)
     _composite(surface, layer, rect)
 
 
-def draw_player(surface: pygame.Surface, x: float, y: float, radius: float) -> None:
-    draw_glow(surface, x, y, config.COLOR_PLAYER, int(radius * 5))
-    pygame.draw.circle(surface, config.COLOR_PLAYER, (int(x), int(y)), int(radius))
+def draw_player(surface: pygame.Surface, x: float, y: float, radius: float,
+                camera) -> None:
+    sx, sy = camera.to_screen(x, y)
+    scaled = max(1, int(camera.scale_length(radius)))
+    _glow_at(surface, sx, sy, config.COLOR_PLAYER, scaled * 5)
+    pygame.draw.circle(surface, config.COLOR_PLAYER, (int(sx), int(sy)), scaled)
 
 
-def draw_trail(surface: pygame.Surface, points) -> None:
+def draw_chamber(surface: pygame.Surface, chamber, camera,
+                 is_current: bool) -> None:
+    """The corridor outline. Dim for neighbours, brighter for the one you are
+    in, so the seam is legible without a HUD element."""
+    points = [camera.to_screen(x, y) for x, y in chamber.outline()]
+    colour = _scaled(config.COLOR_CHAMBER, (42 if is_current else 18) / 255.0)
+    pygame.draw.lines(surface, colour, True, points, 2)
+
+
+def draw_arrow(surface: pygame.Surface, chamber, camera,
+               is_current: bool = True) -> None:
+    """The exit arrow spans the chamber's FULL far side, so it reads as a
+    threshold you cross rather than a target you aim at. Chevrons point along
+    next_direction, which is where gravity will pull once you are through.
+
+    A chamber that does not turn draws nothing. The arrow means GRAVITY TURNS
+    HERE; drawing one at every seam once most chambers run straight would teach
+    the player to ignore arrows, and the one that does turn gravity is then the
+    one they miss."""
+    if chamber.turn == 0:
+        return
+
+    a, b = (camera.to_screen(*point) for point in chamber.arrow_endpoints())
+    pygame.draw.line(surface, _scaled(config.COLOR_ARROW,
+                                      (204 if is_current else 90) / 255.0),
+                     a, b, 3)
+
+    dx, dy = camera.direction_to_screen(*chamber.next_direction)
+    ux, uy = -dy, dx
+    colour = _scaled(config.COLOR_ARROW, (242 if is_current else 102) / 255.0)
+    width, height = surface.get_size()
+    half = chamber.params.half_width
+    for k in range(-2, 3):
+        cx, cy = camera.to_screen(*chamber.world(chamber.params.depth,
+                                                 k * half * 0.42))
+        if not (-60 <= cx <= width + 60 and -60 <= cy <= height + 60):
+            continue
+        pygame.draw.lines(surface, colour, False, [
+            (cx + ux * 13 - dx * 10, cy + uy * 13 - dy * 10),
+            (cx + dx * 10, cy + dy * 10),
+            (cx - ux * 13 - dx * 10, cy - uy * 13 - dy * 10),
+        ], 3)
+
+
+def draw_trail(surface: pygame.Surface, points, camera) -> None:
     """Fades from tail to head so orbit shape is legible as a drawn line.
 
     The fade is drawn in TRAIL_BANDS constant-brightness bands rather than
@@ -160,7 +228,7 @@ def draw_trail(surface: pygame.Surface, points) -> None:
     invisible at these alphas — consecutive segments differ by under two
     levels out of 255.
     """
-    points = tuple(points)
+    points = tuple(camera.to_screen(x, y) for x, y in points)
     total = len(points)
     if total < 2:
         return
@@ -185,6 +253,44 @@ def draw_trail(surface: pygame.Surface, points) -> None:
                                          (8 + 120 * t * t) / 255.0),
                           False, segment, 2)
     _composite(surface, layer, rect)
+
+
+CHARGE_GAP = 0.22          # radians of blank between arcs
+
+
+def draw_charges(surface: pygame.Surface, x: float, y: float,
+                 charges: float, charges_max: float, player_radius: float,
+                 camera) -> None:
+    """The repel budget, as arcs orbiting the player.
+
+    Drawn on the player and in the repel hue rather than as a bar in a corner,
+    because in this game light IS the ruleset (spec section 7) and a resource
+    should speak the same language as the force it pays for. A partly-spent
+    charge dims its own arc rather than vanishing, so the reading is continuous
+    like the beam's intensity is.
+    """
+    whole = max(1, int(round(charges_max)))
+    radius = camera.scale_length(player_radius) * 2.4
+    # A floor, not a bail-out. player_radius is itself live-tunable down to 2,
+    # so a small player plus a wide view would otherwise make the whole readout
+    # VANISH — the threshold is view_width > player_radius * 768, unreachable at
+    # the default radius of 12 but trivially reachable at 6. The design doc's
+    # fallback for "unreadable at some settings" is a dimmer cue, never an
+    # absent one: a player who cannot see the arcs must not conclude they have
+    # no charges.
+    radius = max(radius, 6.0)
+    sx, sy = camera.to_screen(x, y)
+    span = (2.0 * math.pi / whole) - CHARGE_GAP
+    box = pygame.Rect(int(sx - radius), int(sy - radius),
+                      int(radius * 2), int(radius * 2))
+
+    for index in range(whole):
+        filled = max(0.0, min(1.0, charges - index))
+        if filled <= 0.0:
+            continue
+        start = index * (2.0 * math.pi / whole) + CHARGE_GAP * 0.5
+        pygame.draw.arc(surface, _scaled(config.COLOR_BEAM_REPEL, filled),
+                        box, start, start + span, 2)
 
 
 def force_magnitude(fx: float, fy: float) -> float:

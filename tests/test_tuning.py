@@ -77,3 +77,36 @@ def test_restore_defaults():
     state.values["k_attract"] = 99.0
     state.restore_defaults()
     assert state.values["k_attract"] == config.TUNABLES["k_attract"][0]
+
+
+def test_load_ignores_unknown_and_missing_keys(tmp_path):
+    """A preset written before the rename must not crash the game."""
+    path = tmp_path / "old.json"
+    path.write_text('{"gravity_y": 900.0, "k_attract": 12.0}', encoding="utf-8")
+    state = TuningState(config.default_tunables())
+    assert state.load(path) is True
+    assert state.values["k_attract"] == 12.0
+    assert state.values["gravity"] == config.TUNABLES["gravity"].default
+
+
+def test_nudge_adjusts_a_named_knob_without_moving_the_selection():
+    """Field of view is on its own keys, not on the overlay's cursor: hunting
+    for it eleven rows down while playing is not a control."""
+    state = TuningState(config.default_tunables())
+    state.select("k_attract")
+    before = state.values["view_width"]
+
+    state.nudge("view_width", +1)
+
+    assert state.values["view_width"] == before + config.TUNABLES["view_width"].step
+    assert state.selected == "k_attract"
+
+
+def test_nudge_clamps_to_the_knobs_own_bounds():
+    state = TuningState(config.default_tunables())
+    for _ in range(500):
+        state.nudge("view_width", +1, fast=True)
+    assert state.values["view_width"] == config.TUNABLES["view_width"].hi
+    for _ in range(500):
+        state.nudge("view_width", -1, fast=True)
+    assert state.values["view_width"] == config.TUNABLES["view_width"].lo

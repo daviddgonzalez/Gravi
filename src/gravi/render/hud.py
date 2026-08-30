@@ -9,7 +9,8 @@ from .. import config
 _font: pygame.font.Font | None = None
 
 HELP_LINES = (
-    "J / LMB attract    K / RMB repel    R restart",
+    "J / LMB attract   K / RMB repel   R new run   C camera   - / = view",
+    "T rigid rope",
     "TAB overlay   UP/DOWN select   LEFT/RIGHT adjust   SHIFT x10",
     "F5 save preset   F9 load preset   F8 defaults",
     "ALT+LMB drag node   ALT+RMB add   DEL remove   [ ] radius   , . core",
@@ -47,7 +48,8 @@ def _text(text: str, color: tuple[int, int, int]) -> pygame.Surface:
 
 
 def draw(surface: pygame.Surface, tuning, status: str = "",
-         fps: float | None = None, steps: int | None = None) -> None:
+         fps: float | None = None, steps: int | None = None,
+         run: str | None = None) -> None:
     x, y = 16, 14
     line_height = 19
 
@@ -67,6 +69,10 @@ def draw(surface: pygame.Surface, tuning, status: str = "",
         warning = "  SLOW MOTION — sim cannot keep up" if saturated else ""
         line(f"fps {fps:5.1f}{detail}{warning}",
              (255, 110, 110) if saturated else config.COLOR_HUD)
+
+    if run is not None:
+        # A playtester must never be unsure which camera mode they are judging.
+        line(run, (255, 255, 255))
 
     line(f"orbit period  {tuning.orbital_period():6.2f} s   "
          f"(2*pi/sqrt(k_attract) — same at any orbit size)")
