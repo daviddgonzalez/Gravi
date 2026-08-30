@@ -92,7 +92,7 @@ as:
 | **whip corridor** | Chaining rhythm and carry: release timing is a tempo, not a decision | A staggered line of nodes down the chamber, each reachable only from the previous one's exit arc |
 | **orbit garden** | Selection and commitment: which anchor, and how much of it to spend | Sparse, large-radius nodes in open space, several viable orders |
 | **dead-zone crossing** | The launch decides the flight: momentum planned before it is needed | One node field, then a span of nothing, crossed ballistically |
-| **surface run** | The wall is a tool: repel to launch without touching, attract to slam flat and kill a bad arc | Charged surfaces as the primary anchors, free nodes scarce |
+| **surface run** | The wall is a tool, and it only ever pushes: launch off a surface you never touch, and read a corridor by where its walls can and cannot reach you | Charged surfaces as the primary anchors, free nodes scarce |
 | **branch fork** | Risk assessment under commitment: the choice is positional and irreversible | Two exit arrows tiling the far side, each turning gravity a different way |
 
 **`gauntlet` is cut.** It fails the test: core spec §3.6 already treats hazard
@@ -144,89 +144,72 @@ six dimensions deliberately and pins the rest.
 ### 2.3 The entry contract: two kinds of seam
 
 Core spec §4.3 pictures the runtime asking for *"a chamber measured at difficulty
-0.62 that accepts a downward entry"*. The direction half of that question answers
-itself, and saying why deletes a whole category of bookkeeping before anyone
-writes it. But the *offset* half turns out to have two answers, not one, and an
-earlier draft of this section got that wrong — worth stating carefully, because
-the schema in §3.1 depends on it.
+0.62 that accepts a downward entry"*. Every chamber accepts a downward entry, so
+that half of the question is free. Where you land is the half that matters, and
+it has two answers.
 
-**Chambers are built in their own frame, not the world's.** Every chamber carries
-its own axes: origin at the centre of its entrance, `+d` pointing into the
-chamber the way gravity pulls, `+perp(d)` running across it. The generator works
-only in these local axes. It never knows — and never needs to know — which way
-the chamber faces in the world. So in local coordinates every chamber is entered
-travelling along `+d`, always. No archetype can be direction-specific, and none
-declares a direction. That much of §4.3 is free.
+**Chambers are built in their own frame.** Origin at the centre of the entrance,
+`+d` pointing the way gravity pulls, `+perp(d)` across. The generator works only
+in these axes and never learns which way the chamber faces in the world. So entry
+is always along `+d` — no archetype is direction-specific, and none declares a
+direction.
 
-**Where you enter depends on whether gravity turned.** Since amendment A1 (§1.1),
-gravity turns only every `turn_gap_min..turn_gap_max` chambers — measured at
-**19% turning, 81% straight** over 200 seeds. The two seams behave differently,
-and both are live:
+**Where you land depends on whether gravity turned.** Since amendment A1 (§1.1),
+gravity turns only every few chambers. Over 200 seeds: **19% turning, 81%
+straight.** Call `u` the sideways offset at which you crossed the last arrow.
 
 | Seam | Frequency | Entry depth | Entry offset |
 |---|---|---|---|
 | **Turning** (`turn = ±1`) | ~19% | `±u` | `0` |
 | **Straight** (`turn = 0`) | ~81% | `0` | `u` |
 
-where `u` is the lateral offset at which the player crossed the previous arrow.
+When gravity **turns**, the axes swap: the direction you were drifting across
+becomes the direction you now fall. Your crossing offset becomes your depth, and
+you land dead centre. Cross wide and you start deep, skipping the chamber's first
+nodes; cross short and you start behind the entrance with further to fall.
 
-On a **turning** seam the axes swap: the direction you were drifting across
-becomes the direction you now fall, so your crossing offset becomes your *depth*
-and your offset resets to exactly zero. Cross wide at +300 and you begin 300 px
-in, skipping the chamber's opening stretch of node field; cross short at −200 and
-you begin 200 px *behind* the entrance line, with extra falling to do before the
-content starts.
+When gravity runs **straight**, nothing swaps. The next chamber begins at the
+previous one's exit centre, so you start at the top — but off to one side, by
+exactly the `u` you crossed at.
 
-On a **straight** seam the axes do not swap. The next entrance is placed at the
-previous chamber's exit *centre*, so depth resets to zero and your crossing
-offset carries straight through as offset. You arrive at the top of the chamber,
-but off to one side.
+Both were checked against the shipped `chamber.py`, not derived on paper.
 
-Both are verified against the shipped `chamber.py`, not derived on paper.
+> **This corrects two documents.** Slice 2 §4.3 and the `chamber.py` module
+> docstring both say entry offset is *always* zero. That was true when every
+> arrow turned. Since the turn cadence landed it describes only the turning 19%.
+> The code is right; the prose is stale. S6 owns the fix (§6.4) — this spec does
+> not edit either file.
 
-> **This corrects slice 2 §4.3 and the `chamber.py` module docstring**, both of
-> which state that lateral offset is *always* zero. That was true when every
-> arrow turned. It has not been true since the turn cadence landed. The claim
-> holds for turning seams only. Flagged for S6 in §6.4 — this spec does not edit
-> either file.
-
-**The corollary each seam needs is different, and both already hold.** A turning
-entry puts the player on the centre line at a depth up to `±half_width`, which is
-well past `entry_clear` and therefore *inside* the node field — safe only because
-`lane_clear` keeps cores off the centre lane. A straight entry puts the player at
-depth zero but at an arbitrary offset — safe only because `entry_clear` keeps
-nodes away from the entrance line across the full width. Neither guarantee covers
-the other case. Both must survive any archetype this spec defines, and §5.1 makes
-that a tier-1 rejection rather than a hope.
+**Each seam is kept safe by a different rule, and both already hold.** A turning
+entry drops you on the centre line but deep — often past `entry_clear` and inside
+the node field — so what protects you is `lane_clear` keeping cores off the
+centre lane. A straight entry drops you at the top but anywhere across the width,
+so what protects you is `entry_clear` keeping nodes back from the entrance line.
+Neither rule covers the other case. Every archetype must satisfy both, and §5.1
+makes that a tier-1 rejection rather than a hope.
 
 #### What an archetype declares
 
-Its **entry envelope** — now three ranges, not two:
+Its **entry envelope** — three ranges:
 
-- **entry depth** — bounded by the previous chamber's `half_width` on a turning
-  seam, exactly zero on a straight one.
-- **entry offset** — exactly zero on a turning seam, bounded by the previous
-  chamber's `half_width` on a straight one.
-- **entry speed** — the magnitude of the velocity carried through the arrow.
+- **entry depth** — up to the previous chamber's `half_width` on a turning seam;
+  zero on a straight one.
+- **entry offset** — zero on a turning seam; up to the previous chamber's
+  `half_width` on a straight one.
+- **entry speed** — how fast you arrive.
 
-Depth and offset are both coupled to the *previous* chamber, which is what makes
-them the fields a lookup must test against the player's live state rather than
-assume, and why the envelope belongs to the archetype instead of being a global
-constant.
+Depth and offset both depend on the *previous* chamber, which is why a lookup has
+to test them against the player's live state instead of assuming them.
 
-#### What the runtime asks instead
+#### What the runtime asks
 
-The query is `(target difficulty, entry state, exits wanted)`, and "accepts a
-downward entry" resolves to one concrete test: *does this box's entry envelope
-contain the player's current `(depth, offset, speed)`?* Same question core spec
-§4.3 wanted to ask, with the half that answers itself replaced by the halves that
-carry information.
+`(target difficulty, entry state, exits wanted)`. "Accepts a downward entry"
+becomes one concrete test: *does this box's envelope contain the player's
+`(depth, offset, speed)`?*
 
-**A box that only handles one seam type is legal** — it declares a degenerate
-range on the other — but the library must hold enough of both that a lookup at
-any difficulty can be answered either way. §5.6's budget splits sampling
-accordingly.
-
+A box may serve one seam type only, declaring `lo == hi == 0.0` on the other. But
+the library must hold enough of both that a lookup at any difficulty can be
+answered either way, and §5.6's budget splits sampling to match.
 ### 2.4 The exit contract, and branching geometry
 
 A single-exit archetype declares one arrow spanning the far side, with a `turn`
@@ -982,6 +965,12 @@ has `surface_force()`. What remains:
   archetype needs *placeable* charged segments, which is a generation-side
   entity, not a second force law (core spec §8.1). It stays S6's, and it must
   call the existing `surface_force()` unchanged.
+- **S6 — wall attract is cut, and the 2026-08-22 design doc should say so.**
+  That doc's §7 lists it as out of scope *"until wall-repel has been played"*,
+  which reads as deferred. It is not deferred; it is cut (§7 here). Surfaces
+  repel and never attract, which keeps one surface law rather than two and keeps
+  attract meaning "the whip" everywhere in the game. S6 owns the amendment; this
+  spec does not edit that file.
 - **S6 — the entry envelope is three ranges now, not two.** Any archetype
   authored against the old two-field `EntryEnvelope` needs `offset_lo`/
   `offset_hi`, and must declare which seam types it was measured under.
@@ -1009,6 +998,7 @@ has `surface_force()`. What remains:
 |---|---|---|
 | Archetype roster | whip corridor, orbit garden, dead-zone crossing, **surface run**, branch fork | Each teaches a distinct thing; gauntlet did not |
 | Gauntlet | Cut; becomes `hazard_density` + spacing knobs | §3.6 already makes hazards a knob, so it was a re-skin |
+| Wall attract | **Cut**, not deferred. Surfaces only ever repel | Author's call, 2026-08-30. The 2026-08-22 design shelved it pending a playtest; this closes it. `surface run` teaches the push alone |
 | Archetype representation | Declared knob set + data placement program, one shared interpreter | Makes the tenth archetype a data literal, and lets the validator enumerate dimensions without executing anything |
 | Box dimensionality | `MAX_BOX_DIMS = 6` | Coverage and validation cost both degrade fast beyond it |
 | Entry declaration | Entry *envelope* (depth, speed); no direction | Local coordinates make every chamber downward-entered; direction is vacuous |
@@ -1118,11 +1108,11 @@ failure (core spec §1) in its generator-shaped form.
 - **Whether `room.py` survives.** Inherited from slice 2's open questions. The
   editor is genuinely useful for authoring an archetype's placement program by
   hand and reading off the numbers, which argues for keeping it. S6 decides.
-- **Surface force law.** `surface_force()` is asserted here to be the same law
-  applied to a segment (nearest point on the segment, then §2.2's profiles). It
-  has not been prototyped, and whether attract-to-a-wall feels like "slam flat"
-  rather than "stick" is a feel question of the kind slice 1 answered with a
-  build. **S6 should prototype it before writing `surface_run`.**
+- **Segment geometry for placed surfaces.** `surface_force()` ships taking
+  `(distance, normal, reach)`, and its only caller is the corridor wall. A
+  *placed* surface needs the nearest point on a segment computed first, then the
+  same call. That is geometry, not a second force law (core spec §8.1), and it
+  is the one piece of `surface_run` that is not yet written. S6 owns it.
 
 ---
 
