@@ -12,7 +12,8 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "gravi"
 
 def test_sim_core_does_not_import_pygame():
     code = (
-        "import gravi.sim, gravi.field, gravi.room, gravi.gravity, gravi.chamber, sys; "
+        "import gravi.sim, gravi.field, gravi.room, gravi.gravity, "
+        "gravi.chamber, gravi.storage, sys; "
         "assert 'pygame' not in sys.modules, sorted(m for m in sys.modules if 'pygame' in m)"
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
