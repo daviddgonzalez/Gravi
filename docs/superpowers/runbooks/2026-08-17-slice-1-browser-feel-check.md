@@ -3,10 +3,10 @@
 **Date:** 2026-08-17, rebuilt 2026-08-30 against slice 2
 **Build:** `f276b10` — S4 merged with main, i.e. slice 2 (chambers, gravity
 vector, camera, charged surfaces, repel charges)
-**Judged by:** _not yet — awaiting a human at a keyboard_
-**Status:** **INCOMPLETE.** The build half is done and recorded. The verdict
-half needs someone to play it. Do not cite this runbook as an answer until the
-Verdict section is filled in.
+**Judged by:** the author, at a keyboard, 2026-08-30
+**Status:** **COMPLETE — PASS.** The browser build plays well: steady fps, no
+physics saturation, chaining and the camera both hold up. See the Decision
+section for what this does and does not establish.
 
 Does the game's feel survive WebAssembly frame pacing? This runbook is where
 that gets answered.
@@ -78,7 +78,7 @@ Two things worth reading off that table:
   measurement of this, since what that rejected was rotating the *finished
   frame*, not the camera transform.
 
-## What the human half needs
+## How to reproduce this check
 
 Serve it and play it:
 
@@ -96,26 +96,41 @@ running.
 Controls: **J** or left mouse attracts, **K** or right mouse repels. **Tab**
 toggles the HUD overlay, which is where the fps and step numbers are.
 
-Fill in, having played for **at least five minutes actually chaining orbits**
-— not booted and looked at:
+## Human results — 2026-08-30
 
-- [ ] **fps**, from the overlay: `___` (steady-state, not the first seconds)
-- [ ] **physics steps per frame**, from the overlay: `___`
-      At 60 fps the expected value is 4 (240 Hz sim / 60 Hz frames). A number
-      pinned at 12 means `MAX_STEPS_PER_FRAME` is saturating and the
-      simulation is running slow motion relative to wall clock, which is the
-      specific failure this check exists to catch.
-- [ ] **Chaining three orbits feels:** same as native / better / worse
-- [ ] **If worse, which:** input latency / frame pacing jitter / physics
-      stepping / something else
-- [ ] **Does the camera hold up** through a gravity flip, which is new since
-      this runbook was first written: `___`
-- [ ] **Browser and machine used:** `___`
+- [x] **fps:** good, steady. Not read off as an exact figure; the overlay was
+      not showing the red saturation warning at any point, which bounds it.
+- [x] **physics steps per frame: `sim 4/12`, no red line.** This is the
+      healthy value and the single most important reading here. 240 Hz sim
+      into 60 Hz frames is exactly 4. `MAX_STEPS_PER_FRAME` is 12, and
+      saturation turns the whole HUD line red with `SLOW MOTION — sim cannot
+      keep up`; that never appeared. **The failure this gate exists to catch
+      did not occur.**
+- [x] **Chaining orbits:** good.
+- [x] **Camera through a gravity flip:** survives.
+- [ ] **Browser and machine:** not recorded beyond "a browser". Worth
+      capturing on the next pass, since one browser on one machine is already
+      a narrow sample and this does not say which one.
 
 ## Decision
 
-_Pending. One of: same as native / better / worse. If worse, name which of
-input latency, frame pacing jitter, or physics stepping._
+**PASS.** The browser build is playable: the physics loop is not saturating,
+frame rate is steady, orbit chaining feels good and the camera holds through a
+gravity flip.
+
+What this does **not** establish, stated so nobody reads more into it later:
+
+- **It is not a measured parity result against native.** The two builds were
+  not played back to back. The judgement is "this feels good in the browser",
+  not "this feels identical to `python main.py`". If parity specifically
+  matters to a later decision, that A/B still has to be run.
+- Input latency was not isolated. It is the failure most likely to feel wrong
+  while every number looks right, and nothing here separates it out.
+
+The confound noted above — WASM versus slice 2 — turns out not to bite. It
+would have made a **failure** ambiguous, because a bad result could have been
+either. A pass has no such problem: both the browser target and the slice 2
+code are fine, or the run would not have been clean.
 
 ## Coverage gaps, stated plainly
 
