@@ -93,7 +93,17 @@ jobs:
           if missing:
               print("missing from the package:", missing)
               sys.exit(1)
-          print(f"package holds {len(names)} entries, all required files present")
+          # The trainer runs natively and never in the browser (core spec 8.6).
+          # It shipped to Pages once already, unnoticed, because nothing
+          # imports it and so nothing broke. Absence has to be asserted or it
+          # comes back the next time pygbag.ini is edited.
+          forbidden = [n for n in names if "/gravi/ai/" in n]
+          if forbidden:
+              print(f"the GA trainer must not ship to the browser; found {len(forbidden)}:")
+              for n in forbidden[:5]:
+                  print("   ", n)
+              sys.exit(1)
+          print(f"package holds {len(names)} entries, all required present, no trainer")
           PY
 
       - name: Upload build/web
