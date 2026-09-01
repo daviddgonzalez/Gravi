@@ -218,9 +218,41 @@ not against anything remembered from earlier in this session.
 
 - **The force-law constants did not move.** `k_attract`, `k_repel`,
   `force_max`, `gravity`, `speed_max` and `fall_speed_max` are exactly slice
-  1's values. They are **not yet frozen** — the playtest above may still move
-  them, so S7 must not bake a shipped chamber library until this runbook says
-  PROCEED and names them final (core spec §4.4).
+  1's values.
+
+### PROCEED — the force law is frozen (2026-09-01)
+
+**These six values are final. S7 may bake a shipped chamber library.**
+
+| constant | frozen value |
+|---|---|
+| `k_attract` | 15.0 |
+| `k_repel` | 15.0 |
+| `force_max` | 4500.0 |
+| `gravity` | 500.0 |
+| `speed_max` | 600.0 |
+| `fall_speed_max` | 600.0 |
+
+Basis: the browser feel check of 2026-08-30
+(`2026-08-17-slice-1-browser-feel-check.md`) returned PASS on the merged slice 2
+build — steady frame rate, `sim 4/12` with no saturation, orbit chaining good,
+camera holding through a gravity flip.
+
+**Two limits on that basis, recorded so a later surprise is diagnosable rather
+than mysterious:**
+
+1. **Charged surfaces and repel charges have never been playtested for feel.**
+   They merged on 2026-08-22, after the last tuning session, and the
+   2026-08-30 run was judged on frame pacing and orbit chaining rather than on
+   whether repel budget and wall-launch are correctly tuned. The *force law*
+   they use is unchanged, which is what this freeze covers — but if a later
+   playtest wants a different `k_repel`, this freeze is what has to be
+   reopened, and every measurement S7 baked under it becomes fiction (§4.4).
+2. The freeze was not established by a dedicated tuning pass. It is a decision
+   to stop tuning, taken so the downstream chain (S7 → S9 → S11) can move.
+
+**To reopen:** say so here, in this section, with a date and a reason, and
+notify S7 — a stale library must be obvious, never remembered (invariant 2).
 - **S2:** flip rate is barred from the parameter box and the difficulty record
   (A1). `ChamberParams` is the placeholder your parameter box replaces;
   `ChamberChain.outlines` is retained from the first commit for S10.

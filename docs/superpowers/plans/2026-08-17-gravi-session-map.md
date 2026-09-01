@@ -21,7 +21,16 @@ Gravi's remaining work is split across eleven sessions. To start one, tell it:
 | S10 | The path map | `2026-08-17-gravi-s10-path-map.md` | grunt | S1 |
 | S11 | Calibration, escalation tuning, ship | `2026-08-17-gravi-s11-calibration-and-ship.md` | mixed | S6, S7, S9, S10 |
 
-**Waves.** S1–S4 start now, in parallel, with no file overlap. S5, S6, S7, S8 and S10 start as their blockers clear. S9 then S11 close it out.
+**Waves.**
+
+- **Wave 1 — done (2026-09-01).** S1, S2, S3 and S4 are all merged to `main`.
+- **Wave 2 — S5, S7, S8**, in parallel. See
+  `2026-09-01-gravi-wave-2.md` for the ownership split and why S6 and S10 are
+  held back.
+- **Wave 3 — S6 and S10**, once S8 lands. S6 is blocked on S8 because both
+  write `sim.py`; S10 because it renders at end-of-run, which is S8's summary
+  scene.
+- **S9 then S11** close it out.
 
 S2, S5, S6, S7, S9 and S11 are charters rather than task-by-task plans, because their detail depends on a design that does not exist yet. Each says so and tells you to expand it with the `superpowers-extended-cc:writing-plans` skill once its input spec lands. S1, S3, S4 and S8 are executable as written.
 
@@ -29,7 +38,20 @@ S2, S5, S6, S7, S9 and S11 are charters rather than task-by-task plans, because 
 
 ## Where the project is
 
-Slice 1 shipped and was judged: `docs/superpowers/runbooks/2026-08-11-slice-1-feel-verdict.md` says PROCEED. There is a playable single room with live tuning, an in-session editor, a neon renderer, and a browser build that boots. Slice 2 is designed (`docs/superpowers/specs/2026-08-13-gravi-slice-2-gravity-and-camera-design.md`) with two working HTML prototypes in `proto/`, and not yet implemented. Slices 3–6 are design-only.
+**Updated 2026-09-01.** Slice 1 shipped and was judged PROCEED
+(`docs/superpowers/runbooks/2026-08-11-slice-1-feel-verdict.md`). **Slice 2 is
+built and merged** — chambers, the gravity vector, camera rotation, charged
+surfaces and repel charges — and was judged PROCEED
+(`2026-08-17-slice-2-rotation-verdict.md`). S2's generation-and-difficulty spec
+and S3's GA stack (`src/gravi/ai/`) are merged. S4's ship layer is merged and
+**the game is live at https://daviddgonzalez.github.io/Gravi/**, published from
+`main` by `.github/workflows/deploy.yml` on every push.
+
+**The force law is frozen** as of 2026-09-01 — see the PROCEED section of the
+slice 2 rotation verdict for the six values and the two caveats on them. S7 is
+unblocked.
+
+Slices 4–6 remain design-only.
 
 **Read the core design spec** (`docs/superpowers/specs/2026-08-11-gravi-core-design.md`) before touching anything. It is 411 lines and it is the whole game. Its §11 decisions table is what you are implementing; its §12 open questions are what is still genuinely undecided. Nothing else is up for renegotiation mid-session — if your work says a locked decision is wrong, stop and report it rather than routing around it.
 
@@ -78,6 +100,10 @@ These bind more than one session, which is why they live here rather than in any
 **4. The run retains chamber geometry.** The end-of-run path map needs the whole route (§6), so cleared chambers keep a light outline instead of being discarded behind the camera. S1 puts `ChamberChain.outlines` there on its first commit; nobody optimises it away.
 
 **5. Two schemas are contracts between sessions.** S2's parameter-box and difficulty-record schemas bind S6 and S7. S8's run event log binds S5 and S9. Whoever owns a schema publishes it early and announces changes; whoever consumes it does not quietly extend it.
+
+**6. In wave 2, `sim.py` and `main.py` belong to S8 alone.** S7 imports both and edits neither — that is core spec §8.1, and it is what makes S7's numbers mean anything. S6 also wants `sim.py`, for node lifetime and depletion, which is precisely why S6 waits for wave 3 rather than racing S8 for the file.
+
+**7. S8's run-log hooks must not change behaviour.** S8 edits `sim.py` while S7 measures difficulty against it. If an "emit hooks only" commit quietly alters a force, a step order or a collision result, every number S7 bakes drifts — and both sessions stay green while it happens, because each is individually correct. S8 lands its `sim.py` hooks **first**, in one identifiable commit, before S7 bakes a library; S7 records the `sim.py` commit SHA its library was measured against.
 
 **6. Five entity types, and no sixth.** Node, charged surface, hazard, gravity arrow, rival. BlueBall died of twenty entity types that were additive rather than multiplicative — adding a cannon did not change what a spike meant (§1). A sixth entity needs a spec amendment, not a commit.
 
