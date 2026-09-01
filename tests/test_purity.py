@@ -44,3 +44,15 @@ def test_chamber_module_is_pure():
     imports = imported_modules(SRC / "chamber.py")
     assert "pygame" not in imports
     assert imports <= {"__future__", "math", "random", "dataclasses", "field"}, imports
+
+
+def test_ai_stack_does_not_import_pygame():
+    """The trainer runs headless, natively, on boxes with no display (spec
+    section 8.6). A stray pygame import here is the difference between a
+    validation build that runs in CI and one that does not."""
+    code = (
+        "import gravi.ai, gravi.ai.env, gravi.ai.trainer, sys; "
+        "assert 'pygame' not in sys.modules, sorted(m for m in sys.modules if 'pygame' in m)"
+    )
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr
